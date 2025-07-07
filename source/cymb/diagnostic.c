@@ -13,10 +13,33 @@
  */
 static void cymbDiagnosticPrint(const CymbDiagnostic* const diagnostic, const char* const file, const unsigned char tabWidth)
 {
-	fprintf(stderr, "In file %s, line %zu, column %zu:\n", file, diagnostic->info.position.line, diagnostic->info.position.column);
+	if(diagnostic->info.line.string)
+	{
+		fprintf(stderr, "In file %s, line %zu, column %zu:\n", file, diagnostic->info.position.line, diagnostic->info.position.column);
+	}
 
 	switch(diagnostic->type)
 	{
+		case CYMB_TOO_MANY_INPUTS:
+			fputs("Too many inputs.\n", stderr);
+			break;
+
+		case CYMB_UNKNOWN_OPTION:
+			fputs("Unknown option.\n", stderr);
+			break;
+
+		case CYMB_MISSING_ARGUMENT:
+			fputs("Missing argument.\n", stderr);
+			break;
+
+		case CYMB_UNEXPECTED_ARGUMENT:
+			fputs("Unexpected argument.\n", stderr);
+			break;
+
+		case CYMB_INVALID_ARGUMENT:
+			fputs("Invalid argument.\n", stderr);
+			break;
+
 		case CYMB_UNKNOWN_TOKEN:
 			fputs("Unknown token.\n", stderr);
 			break;
@@ -41,6 +64,18 @@ static void cymbDiagnosticPrint(const CymbDiagnostic* const diagnostic, const ch
 			fputs("Integer constant too large.\n", stderr);
 			break;
 
+		case CYMB_SEPARATOR_AFTER_BASE:
+			fputs("Digit separator after base prefix.\n", stderr);
+			break;
+
+		case CYMB_DUPLICATE_SEPARATOR:
+			fputs("Duplicate digit separator.\n", stderr);
+			break;
+
+		case CYMB_TRAILING_SEPARATOR:
+			fputs("Trailing digit separator.\n", stderr);
+			break;
+
 		case CYMB_UNEXPECTED_TOKEN:
 			fputs("Unexpected token.\n", stderr);
 			break;
@@ -49,75 +84,87 @@ static void cymbDiagnosticPrint(const CymbDiagnostic* const diagnostic, const ch
 			fputs("Unmatched parenthesis.\n", stderr);
 			break;
 
-		case CYMB_DOUBLE_CONST:
-			fputs("Double const specification.\n", stderr);
+		case CYMB_MULTIPLE_CONST:
+			fputs("Multiple const specification.\n", stderr);
 			break;
 
-		case CYMB_DOUBLE_RESTRICT:
-			fputs("Double restrict specification.\n", stderr);
+		case CYMB_MULTIPLE_RESTRICT:
+			fputs("Multiple restrict specification.\n", stderr);
+			break;
+
+		case CYMB_MULTIPLE_STATIC:
+			fputs("Multiple static specification.\n", stderr);
 			break;
 
 		default:
 			unreachable();
 	}
 
-	const int written = fprintf(stderr, "%zu | ", diagnostic->info.position.line);
-
-	size_t column = 1;
-	for(size_t characterIndex = 0; characterIndex < diagnostic->info.line.length; ++characterIndex)
+	if(diagnostic->info.line.string)
 	{
-		if(diagnostic->info.line.string[characterIndex] == '\t')
-		{
-			const size_t nextTab = cymbNextTab(column, tabWidth);
+		const int written = fprintf(stderr, "%zu | ", diagnostic->info.position.line);
 
-			for(size_t space = column; space < nextTab; ++space)
+		size_t column = 1;
+		for(size_t characterIndex = 0; characterIndex < diagnostic->info.line.length; ++characterIndex)
+		{
+			if(diagnostic->info.line.string[characterIndex] == '\t')
 			{
-				fputc(' ', stderr);
+				const size_t nextTab = cymbNextTab(column, tabWidth);
+
+				for(size_t space = column; space < nextTab; ++space)
+				{
+					fputc(' ', stderr);
+				}
+
+				column = nextTab;
 			}
-
-			column = nextTab;
-		}
-		else
-		{
-			fputc(diagnostic->info.line.string[characterIndex], stderr);
-			++column;
-		}
-	}
-	fputc('\n', stderr);
-
-	for(int prefixIndex = 0; prefixIndex < written; ++prefixIndex)
-	{
-		fputc(' ', stderr);
-	}
-
-	column = 1;
-
-	const ptrdiff_t offset = diagnostic->info.hint.string - diagnostic->info.line.string;
-	for(ptrdiff_t offsetIndex = 0; offsetIndex < offset; ++offsetIndex)
-	{
-		if(diagnostic->info.line.string[offsetIndex] == '\t')
-		{
-			const size_t nextTab = cymbNextTab(column, tabWidth);
-
-			for(size_t space = column; space < nextTab; ++space)
+			else
 			{
-				fputc(' ', stderr);
+				fputc(diagnostic->info.line.string[characterIndex], stderr);
+				++column;
 			}
-
-			column = nextTab;
 		}
-		else
+		fputc('\n', stderr);
+
+		for(int prefixIndex = 0; prefixIndex < written; ++prefixIndex)
 		{
 			fputc(' ', stderr);
-			++column;
 		}
-	}
 
-	for(size_t hintIndex = 0; hintIndex < diagnostic->info.hint.length; ++hintIndex)
-	{
-		fputc('~', stderr);
+		column = 1;
+
+		const ptrdiff_t offset = diagnostic->info.hint.string - diagnostic->info.line.string;
+		for(ptrdiff_t offsetIndex = 0; offsetIndex < offset; ++offsetIndex)
+		{
+			if(diagnostic->info.line.string[offsetIndex] == '\t')
+			{
+				const size_t nextTab = cymbNextTab(column, tabWidth);
+
+				for(size_t space = column; space < nextTab; ++space)
+				{
+					fputc(' ', stderr);
+				}
+
+				column = nextTab;
+			}
+			else
+			{
+				fputc(' ', stderr);
+				++column;
+			}
+		}
+
+		for(size_t hintIndex = 0; hintIndex < diagnostic->info.hint.length; ++hintIndex)
+		{
+			fputc('~', stderr);
+		}
+		fputc('\n', stderr);
 	}
-	fputc('\n', stderr);
+	else
+	{
+		fputs(diagnostic->info.hint.string, stderr);
+		fputc('\n', stderr);
+	}
 }
 
 void cymbDiagnosticListPrint(const CymbConstDiagnosticList* const diagnostics)
@@ -162,7 +209,7 @@ CymbResult cymbDiagnosticAdd(CymbDiagnosticList* const diagnostics, const CymbDi
 
 		const size_t newCapacity = diagnostics->capacity > cymbSizeMax / 2 ? cymbSizeMax : diagnostics->capacity * 2;
 
-		CymbDiagnostic* const newDiagnostics = realloc(diagnostics->diagnostics, newCapacity);
+		CymbDiagnostic* const newDiagnostics = realloc(diagnostics->diagnostics, newCapacity * sizeof(diagnostics->diagnostics[0]));
 		if(!newDiagnostics)
 		{
 			return CYMB_ERROR_OUT_OF_MEMORY;

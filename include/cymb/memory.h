@@ -118,4 +118,16 @@ typedef struct CymbConstString
  */
 typedef CymbConstString CymbStringView;
 
+/*
+ * Create a CymbString from a string literal.
+ *
+ * Parameters:
+ * - string: A string literal.
+ *
+ * Returns:
+ * - A CymbString.
+ */
+#define CYMB_STRING(string) \
+{string, sizeof(string) - 1}
+
 #endif

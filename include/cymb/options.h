@@ -1,14 +1,13 @@
 #ifndef CYMB_ARGUMENTS_H
 #define CYMB_ARGUMENTS_H
 
-#include <stddef.h>
-
+#include "cymb/diagnostic.h"
 #include "cymb/result.h"
 
 /*
  * A C standard version.
  */
-typedef enum CymbVersion: long
+typedef enum CymbStandard: long
 {
 	CYMB_C90,
 	CYMB_C95 = 199409L,
@@ -16,7 +15,7 @@ typedef enum CymbVersion: long
 	CYMB_C11 = 201112L,
 	CYMB_C17 = 201710L,
 	CYMB_C23 = 202311L
-} CymbVersion;
+} CymbStandard;
 
 /*
  * The compiling options.
@@ -30,29 +29,33 @@ typedef enum CymbVersion: long
  */
 typedef struct CymbOptions
 {
-	char* input;
-	char* output;
+	const char** inputs;
+	size_t inputCount;
+	const char* output;
 
-	CymbVersion version;
+	CymbStandard standard;
 
 	unsigned char tabWidth;
 
-	bool debug;
+	bool debug: 1;
+	bool version: 1;
+	bool help: 1;
 } CymbOptions;
 
 /*
  * Parse arguments.
  *
  * Parameters:
- * - argumentCount: The number of arguments.
  * - arguments: The arguments.
- * - options: A pointer to the object storing compiling options.
+ * - argumentCount: The number of arguments.
+ * - options: A pointer to the object storing the options.
+ * - diagnostics: A list of diagnostics.
  *
  * Returns:
  * - CYMB_SUCCESS on success.
  * - CYMB_ERROR_INVALID_ARGUMENT if an invalid argument was passed.
- * - CYMB_ERROR_OUT_OF_MEMORY if file paths could not be allocated.
+ * - CYMB_ERROR_OUT_OF_MEMORY if out of memory.
  */
-CymbResult cymbParseArguments(size_t argumentCount, const char* const* arguments, CymbOptions* options);
+CymbResult cymbParseArguments(const CymbConstString* arguments, size_t argumentCount, CymbOptions* options, CymbDiagnosticList* diagnostics);
 
 #endif

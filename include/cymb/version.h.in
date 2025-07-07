@@ -1,0 +1,11 @@
+#ifndef CYMB_VERSION_H
+#define CYMB_VERSION_H
+
+#define CYMB_VERSION_MAJOR @Cymb_VERSION_MAJOR@
+#define CYMB_VERSION_MINOR @Cymb_VERSION_MINOR@
+#define CYMB_VERSION_PATCH @Cymb_VERSION_PATCH@
+
+void cymbPrintVersion(void);
+void cymbPrintHelp(void);
+
+#endif

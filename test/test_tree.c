@@ -94,6 +94,21 @@ static void cymbCompareTrees(const CymbTreeBuilder* const first, const CymbTreeB
 				}
 				break;
 
+			case CYMB_NODE_WHILE:
+				if(!cymbComparePointers(firstNode->whileNode.expression, first->tree->nodes, secondNode->whileNode.expression, second->tree->nodes))
+				{
+					cymbFail(context, "Wrong expression node.");
+				}
+				if(firstNode->whileNode.body.count != secondNode->whileNode.body.count)
+				{
+					cymbFail(context, "Wrong body statement count.");
+				}
+				if(!cymbComparePointers(firstNode->whileNode.body.nodes, first->tree->children, secondNode->whileNode.body.nodes, second->tree->children))
+				{
+					cymbFail(context, "Wrong body statement pointer.");
+				}
+				break;
+
 			case CYMB_NODE_RETURN:
 				if(!cymbComparePointers(firstNode->returnNode, first->tree->nodes, secondNode->returnNode, second->tree->nodes))
 				{
@@ -136,11 +151,11 @@ static void cymbCompareTrees(const CymbTreeBuilder* const first, const CymbTreeB
 				{
 					cymbFail(context, "Wrong function type return node.");
 				}
-				if(firstNode->functionTypeNode.parameterTypesCount != secondNode->functionTypeNode.parameterTypesCount)
+				if(firstNode->functionTypeNode.parameterTypes.count != secondNode->functionTypeNode.parameterTypes.count)
 				{
 					cymbFail(context, "Wrong function type parameter count.");
 				}
-				if(!cymbComparePointers(firstNode->functionTypeNode.parameterTypesStart, first->tree->children, secondNode->functionTypeNode.parameterTypesStart, second->tree->children))
+				if(!cymbComparePointers(firstNode->functionTypeNode.parameterTypes.nodes, first->tree->children, secondNode->functionTypeNode.parameterTypes.nodes, second->tree->children))
 				{
 					cymbFail(context, "Wrong function type parameter pointer.");
 				}
@@ -170,30 +185,30 @@ static void cymbCompareTrees(const CymbTreeBuilder* const first, const CymbTreeB
 				{
 					cymbFail(context, "Wrong function type.");
 				}
-				if(firstNode->functionNode.parametersCount != secondNode->functionNode.parametersCount)
+				if(firstNode->functionNode.parameters.count != secondNode->functionNode.parameters.count)
 				{
 					cymbFail(context, "Wrong function parameter count.");
 				}
-				if(!cymbComparePointers(firstNode->functionNode.parametersStart, first->tree->children, secondNode->functionNode.parametersStart, second->tree->children))
+				if(!cymbComparePointers(firstNode->functionNode.parameters.nodes, first->tree->children, secondNode->functionNode.parameters.nodes, second->tree->children))
 				{
 					cymbFail(context, "Wrong function parameters pointer.");
 				}
-				if(firstNode->functionNode.statementsCount != secondNode->functionNode.statementsCount)
+				if(firstNode->functionNode.statements.count != secondNode->functionNode.statements.count)
 				{
 					cymbFail(context, "Wrong function statement count.");
 				}
-				if(!cymbComparePointers(firstNode->functionNode.statementsStart, first->tree->children, secondNode->functionNode.statementsStart, second->tree->children))
+				if(!cymbComparePointers(firstNode->functionNode.statements.nodes, first->tree->children, secondNode->functionNode.statements.nodes, second->tree->children))
 				{
 					cymbFail(context, "Wrong function statements pointer.");
 				}
 				break;
 
 			case CYMB_NODE_PROGRAM:
-				if(firstNode->programNode.childrenCount != secondNode->programNode.childrenCount)
+				if(firstNode->programNode.children.count != secondNode->programNode.children.count)
 				{
 					cymbFail(context, "Wrong program child count.");
 				}
-				if(!cymbComparePointers(firstNode->programNode.childrenStart, first->tree->children, secondNode->programNode.childrenStart, second->tree->children))
+				if(!cymbComparePointers(firstNode->programNode.children.nodes, first->tree->children, secondNode->programNode.children.nodes, second->tree->children))
 				{
 					cymbFail(context, "Wrong program children pointer.");
 				}
@@ -239,6 +254,11 @@ static void cymbDoTreeTest(const CymbTreeTest* const test, const CymbTreeFunctio
 		return;
 	}
 
+	cymbCompareDiagnostics(&(CymbConstDiagnosticList){
+		.diagnostics = context->diagnostics.diagnostics,
+		.count = context->diagnostics.count
+	}, &test->diagnostics, context);
+
 	if(parseResult != CYMB_PARSE_MATCH)
 	{
 		return;
@@ -250,11 +270,6 @@ static void cymbDoTreeTest(const CymbTreeTest* const test, const CymbTreeFunctio
 	}
 
 	cymbCompareTrees(&builder, &test->solution, context);
-
-	cymbCompareDiagnostics(&(CymbConstDiagnosticList){
-		.diagnostics = context->diagnostics.diagnostics,
-		.count = context->diagnostics.count
-	}, &test->diagnostics, context);
 }
 
 static void cymbTestParentheses(CymbTestContext* const context)
@@ -285,8 +300,8 @@ static void cymbTestParentheses(CymbTestContext* const context)
 					.type = CYMB_TOKEN_OPEN_PARENTHESIS,
 					.info = {
 						.position = {8, 8},
-						.line = {"  \t a (!", 8},
-						.hint = {"(", 1}
+						.line = CYMB_STRING("  \t a (!"),
+						.hint = CYMB_STRING("(")
 					}
 				}
 			},
@@ -306,8 +321,8 @@ static void cymbTestParentheses(CymbTestContext* const context)
 					.type = CYMB_TOKEN_CLOSE_PARENTHESIS,
 					.info = {
 						.position = {1, 1},
-						.line = {"(", 1},
-						.hint = {"(", 1}
+						.line = CYMB_STRING("("),
+						.hint = CYMB_STRING("(")
 					}
 				}
 			},
@@ -341,8 +356,8 @@ static void cymbTestParentheses(CymbTestContext* const context)
 					.type = CYMB_TOKEN_CLOSE_PARENTHESIS,
 					.info = {
 						.position = {2, 2},
-						.line = {" ) ", 3},
-						.hint = {")", 1}
+						.line = CYMB_STRING(" ) "),
+						.hint = CYMB_STRING(")")
 					}
 				},
 				{.type = CYMB_TOKEN_OPEN_PARENTHESIS},
@@ -366,8 +381,8 @@ static void cymbTestParentheses(CymbTestContext* const context)
 					.type = CYMB_TOKEN_OPEN_PARENTHESIS,
 					.info = {
 						.position = {3, 3},
-						.line = {" ( ", 3},
-						.hint = {"(", 1}
+						.line = CYMB_STRING(" ( "),
+						.hint = CYMB_STRING("(")
 					}
 				}
 			},
@@ -455,8 +470,8 @@ static void cymbTestExpressions(CymbTestContext* const context)
 	context->strings[context->stringCount] = buffer;
 	++context->stringCount;
 
-	const CymbConstString test2String = {"((5 * (26 + 27 * 28 + 29) + 37))", 32};
-	const CymbConstString test3String = {"0 & 1 << 2 == 3 + 4 * 5 || 6 ^ 7 < 8 >> 9 / 10 && 11 - 12 >= 13 != 14 <= 15 | 16 > 17 % 18", 90};
+	const CymbConstString test2String = CYMB_STRING("((5 * (26 + 27 * 28 + 29) + 37))");
+	const CymbConstString test3String = CYMB_STRING("0 & 1 << 2 == 3 + 4 * 5 || 6 ^ 7 < 8 >> 9 / 10 && 11 - 12 >= 13 != 14 <= 15 | 16 > 17 % 18");
 
 	const CymbTreeTest tests[] = {
 		{{
@@ -1259,10 +1274,10 @@ static void cymbTestTypes(CymbTestContext* const context)
 	context->strings[context->stringCount] = buffer;
 	++context->stringCount;
 
-	const CymbConstString test0String = {"int", 3};
-	const CymbConstString test1String = {"float const*", 12};
-	const CymbConstString test2String = {"const my_type* restrict* const", 30};
-	const CymbConstString test3String = {"const int const", 15};
+	const CymbConstString test0String = CYMB_STRING("int");
+	const CymbConstString test1String = CYMB_STRING("float const*");
+	const CymbConstString test2String = CYMB_STRING("const my_type* restrict* const");
+	const CymbConstString test3String = CYMB_STRING("const const int const const");
 
 	const CymbTreeTest tests[] = {
 		{{
@@ -1418,40 +1433,67 @@ static void cymbTestTypes(CymbTestContext* const context)
 						.hint = {test3String.string + 0, 5}
 					}
 				},
-				{
-					.type = CYMB_TOKEN_INT,
+								{
+					.type = CYMB_TOKEN_CONST,
 					.info = {
 						.position = {1, 7},
 						.line = test3String,
-						.hint = {test3String.string + 6, 3}
+						.hint = {test3String.string + 6, 5}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_INT,
+					.info = {
+						.position = {1, 13},
+						.line = test3String,
+						.hint = {test3String.string + 12, 3}
 					}
 				},
 				{
 					.type = CYMB_TOKEN_CONST,
 					.info = {
-						.position = {1, 11},
+						.position = {1, 17},
 						.line = test3String,
-						.hint = {test3String.string + 10, 5}
+						.hint = {test3String.string + 16, 5}
 					}
-				}
+				},
+								{
+					.type = CYMB_TOKEN_CONST,
+					.info = {
+						.position = {1, 23},
+						.line = test3String,
+						.hint = {test3String.string + 22, 5}
+					}
+				},
 			},
-			.count = 3
+			.count = 5
 		}, CYMB_PARSE_INVALID, {
 			.tree = &(CymbTree){
 				.nodes = (CymbNode[]){
 					{
 						.type = CYMB_NODE_TYPE,
 						.typeNode = {.type = CYMB_TYPE_INT, .isConst = true},
-						.info = tests[3].tokens.tokens[1].info
+						.info = tests[3].tokens.tokens[2].info
 					}
 				},
 				.count = 1
 			}
 		}, {
 			.diagnostics = (const CymbDiagnostic[]){
-				{.type = CYMB_DOUBLE_CONST}
+				{
+					.type = CYMB_MULTIPLE_CONST,
+					.info = tests[3].tokens.tokens[1].info
+				},
+				{
+					.type = CYMB_MULTIPLE_CONST,
+					.info = tests[3].tokens.tokens[4].info
+				},
+				{
+					.type = CYMB_MULTIPLE_CONST,
+					.info = tests[3].tokens.tokens[3].info
+				}
 			},
-			.count = 1
+			.count = 3
 		}, 0}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
@@ -1478,10 +1520,12 @@ static void cymbTestStatements(CymbTestContext* const context)
 	context->strings[context->stringCount] = buffer;
 	++context->stringCount;
 
-	const CymbConstString test2String = {"return;", 7};
-	const CymbConstString test3String = {"return 1 + 2; 3", 15};
-	const CymbConstString test4String = {"int my_var;", 11};
-	const CymbConstString test5String = {"const long other_var = 1;", 25};
+	const CymbConstString test2String = CYMB_STRING("return;");
+	const CymbConstString test3String = CYMB_STRING("return 1 + 2; 3");
+	const CymbConstString test4String = CYMB_STRING("int my_var;");
+	const CymbConstString test5String = CYMB_STRING("const long other_var = 1;");
+	const CymbConstString test6String = CYMB_STRING("while(a > 5){int b = 3; return a + b;}");
+	const CymbConstString test7String = CYMB_STRING("while(0)return;return;");
 
 	const CymbTreeTest tests[] = {
 		{{
@@ -1734,6 +1778,312 @@ static void cymbTestStatements(CymbTestContext* const context)
 				},
 				.count = 4
 			}
+		}, {}, 6},
+		{{
+			.tokens = (const CymbToken[]){
+				{
+					.type = CYMB_TOKEN_WHILE,
+					.info = {
+						.position = {1, 1},
+						.line = test6String,
+						.hint = {test6String.string + 0, 5}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_OPEN_PARENTHESIS,
+					.info = {
+						.position = {1, 6},
+						.line = test6String,
+						.hint = {test6String.string + 5, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_IDENTIFIER,
+					.info = {
+						.position = {1, 7},
+						.line = test6String,
+						.hint = {test6String.string + 6, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_GREATER,
+					.info = {
+						.position = {1, 9},
+						.line = test6String,
+						.hint = {test6String.string + 8, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_CONSTANT,
+					.constant = {CYMB_CONSTANT_INT, 5},
+					.info = {
+						.position = {1, 11},
+						.line = test6String,
+						.hint = {test6String.string + 10, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_CLOSE_PARENTHESIS,
+					.info = {
+						.position = {1, 12},
+						.line = test6String,
+						.hint = {test6String.string + 11, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_OPEN_BRACE,
+					.info = {
+						.position = {1, 13},
+						.line = test6String,
+						.hint = {test6String.string + 12, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_INT,
+					.info = {
+						.position = {1, 14},
+						.line = test6String,
+						.hint = {test6String.string + 13, 3}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_IDENTIFIER,
+					.info = {
+						.position = {1, 18},
+						.line = test6String,
+						.hint = {test6String.string + 17, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_EQUAL,
+					.info = {
+						.position = {1, 20},
+						.line = test6String,
+						.hint = {test6String.string + 19, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_CONSTANT,
+					.constant = {CYMB_CONSTANT_INT, 3},
+					.info = {
+						.position = {1, 22},
+						.line = test6String,
+						.hint = {test6String.string + 21, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_SEMICOLON,
+					.info = {
+						.position = {1, 23},
+						.line = test6String,
+						.hint = {test6String.string + 22, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_RETURN,
+					.info = {
+						.position = {1, 25},
+						.line = test6String,
+						.hint = {test6String.string + 24, 6}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_IDENTIFIER,
+					.info = {
+						.position = {1, 32},
+						.line = test6String,
+						.hint = {test6String.string + 31, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_PLUS,
+					.info = {
+						.position = {1, 34},
+						.line = test6String,
+						.hint = {test6String.string + 33, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_IDENTIFIER,
+					.info = {
+						.position = {1, 36},
+						.line = test6String,
+						.hint = {test6String.string + 35, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_SEMICOLON,
+					.info = {
+						.position = {1, 37},
+						.line = test6String,
+						.hint = {test6String.string + 36, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_CLOSE_BRACE,
+					.info = {
+						.position = {1, 38},
+						.line = test6String,
+						.hint = {test6String.string + 37, 1}
+					}
+				}
+			},
+			.count = 18
+		}, CYMB_PARSE_MATCH, {
+			.tree = &(CymbTree){
+				.nodes = (CymbNode[]){
+					{
+						.type = CYMB_NODE_IDENTIFIER,
+						.info = tests[6].tokens.tokens[2].info
+					},
+					{
+						.type = CYMB_NODE_CONSTANT,
+						.constantNode = {CYMB_CONSTANT_INT, 5},
+						.info = tests[6].tokens.tokens[4].info
+					},
+					{
+						.type = CYMB_NODE_BINARY_OPERATOR,
+						.binaryOperatorNode = {.operator = CYMB_BINARY_OPERATOR_GE},
+						.info = tests[6].tokens.tokens[3].info
+					},
+					{
+						.type = CYMB_NODE_TYPE,
+						.typeNode = {.type = CYMB_TYPE_INT},
+						.info = tests[6].tokens.tokens[7].info
+					},
+					{
+						.type = CYMB_NODE_IDENTIFIER,
+						.info = tests[6].tokens.tokens[8].info
+					},
+					{
+						.type = CYMB_NODE_CONSTANT,
+						.constantNode = {CYMB_CONSTANT_INT, 3},
+						.info = tests[6].tokens.tokens[10].info
+					},
+					{
+						.type = CYMB_NODE_DECLARATION,
+						.info = tests[6].tokens.tokens[8].info
+					},
+					{
+						.type = CYMB_NODE_IDENTIFIER,
+						.info = tests[6].tokens.tokens[13].info
+					},
+					{
+						.type = CYMB_NODE_IDENTIFIER,
+						.info = tests[6].tokens.tokens[15].info
+					},
+					{
+						.type = CYMB_NODE_BINARY_OPERATOR,
+						.binaryOperatorNode = {.operator = CYMB_BINARY_OPERATOR_SUM},
+						.info = tests[6].tokens.tokens[14].info
+					},
+					{
+						.type = CYMB_NODE_RETURN,
+						.info = tests[6].tokens.tokens[12].info
+					},
+					{
+						.type = CYMB_NODE_WHILE,
+						.whileNode = {.body = {.count = 2}},
+						.info = tests[6].tokens.tokens[0].info
+					}
+				},
+				.count = 12,
+				.children = (CymbNode*[2]){}
+			},
+			.childCount = 2
+		}, {}, 18},
+		{{
+			.tokens = (const CymbToken[]){
+				{
+					.type = CYMB_TOKEN_WHILE,
+					.info = {
+						.position = {1, 1},
+						.line = test7String,
+						.hint = {test7String.string + 0, 5}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_OPEN_PARENTHESIS,
+					.info = {
+						.position = {1, 6},
+						.line = test7String,
+						.hint = {test7String.string + 5, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_CONSTANT,
+					.constant = {CYMB_CONSTANT_INT, 0},
+					.info = {
+						.position = {1, 7},
+						.line = test7String,
+						.hint = {test7String.string + 6, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_CLOSE_PARENTHESIS,
+					.info = {
+						.position = {1, 8},
+						.line = test7String,
+						.hint = {test7String.string + 7, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_RETURN,
+					.info = {
+						.position = {1, 9},
+						.line = test7String,
+						.hint = {test7String.string + 8, 6}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_SEMICOLON,
+					.info = {
+						.position = {1, 15},
+						.line = test7String,
+						.hint = {test7String.string + 14, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_RETURN,
+					.info = {
+						.position = {1, 16},
+						.line = test7String,
+						.hint = {test7String.string + 15, 6}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_SEMICOLON,
+					.info = {
+						.position = {1, 22},
+						.line = test7String,
+						.hint = {test7String.string + 21, 1}
+					}
+				},
+			},
+			.count = 8
+		}, CYMB_PARSE_MATCH, {
+			.tree = &(CymbTree){
+				.nodes = (CymbNode[]){
+					{
+						.type = CYMB_NODE_CONSTANT,
+						.constantNode = {CYMB_CONSTANT_INT, 0},
+						.info = tests[7].tokens.tokens[2].info
+					},
+					{
+						.type = CYMB_NODE_RETURN,
+						.returnNode = nullptr,
+						.info = tests[7].tokens.tokens[4].info
+					},
+					{
+						.type = CYMB_NODE_WHILE,
+						.whileNode = {.body = {.count = 1}},
+						.info = tests[7].tokens.tokens[0].info
+					}
+				},
+				.count = 3,
+				.children = (CymbNode*[1]){}
+			},
+			.childCount = 1
 		}, {}, 6}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
@@ -1748,6 +2098,23 @@ static void cymbTestStatements(CymbTestContext* const context)
 	tests[5].solution.tree->nodes[3].declarationNode.type = &tests[5].solution.tree->nodes[0];
 	tests[5].solution.tree->nodes[3].declarationNode.identifier = &tests[5].solution.tree->nodes[1];
 	tests[5].solution.tree->nodes[3].declarationNode.initializer = &tests[5].solution.tree->nodes[2];
+
+	tests[6].solution.tree->nodes[2].binaryOperatorNode.leftNode = &tests[6].solution.tree->nodes[0];
+	tests[6].solution.tree->nodes[2].binaryOperatorNode.rightNode = &tests[6].solution.tree->nodes[1];
+	tests[6].solution.tree->nodes[6].declarationNode.type = &tests[6].solution.tree->nodes[3];
+	tests[6].solution.tree->nodes[6].declarationNode.identifier = &tests[6].solution.tree->nodes[4];
+	tests[6].solution.tree->nodes[6].declarationNode.initializer = &tests[6].solution.tree->nodes[5];
+	tests[6].solution.tree->nodes[9].binaryOperatorNode.leftNode = &tests[6].solution.tree->nodes[7];
+	tests[6].solution.tree->nodes[9].binaryOperatorNode.rightNode = &tests[6].solution.tree->nodes[8];
+	tests[6].solution.tree->nodes[10].returnNode = &tests[6].solution.tree->nodes[9];
+	tests[6].solution.tree->nodes[11].whileNode.expression = &tests[6].solution.tree->nodes[2];
+	tests[6].solution.tree->nodes[11].whileNode.body.nodes = tests[6].solution.tree->children;
+	tests[6].solution.tree->children[0] = &tests[6].solution.tree->nodes[6];
+	tests[6].solution.tree->children[1] = &tests[6].solution.tree->nodes[10];
+
+	tests[7].solution.tree->nodes[2].whileNode.expression = &tests[7].solution.tree->nodes[0];
+	tests[7].solution.tree->nodes[2].whileNode.body.nodes = tests[7].solution.tree->children;
+	tests[7].solution.tree->children[0] = &tests[7].solution.tree->nodes[1];
 
 	for(size_t testIndex = 0; testIndex < testCount; ++testIndex)
 	{
@@ -1766,10 +2133,10 @@ static void cymbTestFunctions(CymbTestContext* const context)
 	context->strings[context->stringCount] = buffer;
 	++context->stringCount;
 
-	const CymbConstString test0String = {"int some_func(void){return 1 + 2; return; return 0;}", 52};
-	const CymbConstString test1String = {"const float* some_other_func(){}", 32};
-	const CymbConstString test2String = {"int func(){const int a = 1; return a + 2;};", 43};
-	const CymbConstString test3String = {"void add(const int* const a, float b){return;}", 46};
+	const CymbConstString test0String = CYMB_STRING("int some_func(void){return 1 + 2; return; return 0;}");
+	const CymbConstString test1String = CYMB_STRING("const float* some_other_func(){}");
+	const CymbConstString test2String = CYMB_STRING("int func(){const int a = 1; return a + 2;};");
+	const CymbConstString test3String = CYMB_STRING("void add(const int* const a, float b){return;}");
 
 	const CymbTreeTest tests[] = {
 		{{
@@ -1967,7 +2334,7 @@ static void cymbTestFunctions(CymbTestContext* const context)
 					},
 					{
 						.type = CYMB_NODE_FUNCTION,
-						.functionNode = {.statementsCount = 3},
+						.functionNode = {.statements = {.count = 3}},
 						.info = tests[0].tokens.tokens[1].info
 					}
 				},
@@ -2280,7 +2647,7 @@ static void cymbTestFunctions(CymbTestContext* const context)
 					},
 					{
 						.type = CYMB_NODE_FUNCTION,
-						.functionNode = {.statementsCount = 2},
+						.functionNode = {.statements = {.count = 2}},
 						.info = tests[2].tokens.tokens[1].info
 					}
 				},
@@ -2454,7 +2821,7 @@ static void cymbTestFunctions(CymbTestContext* const context)
 					},
 					{
 						.type = CYMB_NODE_FUNCTION_TYPE,
-						.functionTypeNode = {.parameterTypesCount = 2},
+						.functionTypeNode = {.parameterTypes = {.count = 2}},
 						.info = tests[3].tokens.tokens[0].info
 					},
 					{
@@ -2468,7 +2835,7 @@ static void cymbTestFunctions(CymbTestContext* const context)
 					},
 					{
 						.type = CYMB_NODE_FUNCTION,
-						.functionNode = {.parametersCount = 2, .statementsCount = 1},
+						.functionNode = {.parameters = {.count = 2}, .statements = {.count = 1}},
 						.info = tests[3].tokens.tokens[1].info
 					},
 				},
@@ -2487,7 +2854,7 @@ static void cymbTestFunctions(CymbTestContext* const context)
 	tests[0].solution.tree->nodes[9].returnNode = &tests[0].solution.tree->nodes[8];
 	tests[0].solution.tree->nodes[10].functionNode.name = &tests[0].solution.tree->nodes[2];
 	tests[0].solution.tree->nodes[10].functionNode.type = &tests[0].solution.tree->nodes[1];
-	tests[0].solution.tree->nodes[10].functionNode.statementsStart = &tests[0].solution.tree->children[0];
+	tests[0].solution.tree->nodes[10].functionNode.statements.nodes = &tests[0].solution.tree->children[0];
 	tests[0].solution.tree->children[0] = tests[0].solution.tree->nodes + 6;
 	tests[0].solution.tree->children[1] = tests[0].solution.tree->nodes + 7;
 	tests[0].solution.tree->children[2] = tests[0].solution.tree->nodes + 9;
@@ -2506,17 +2873,17 @@ static void cymbTestFunctions(CymbTestContext* const context)
 	tests[2].solution.tree->nodes[10].returnNode = &tests[2].solution.tree->nodes[9];
 	tests[2].solution.tree->nodes[11].functionNode.type = &tests[2].solution.tree->nodes[1];
 	tests[2].solution.tree->nodes[11].functionNode.name = &tests[2].solution.tree->nodes[2];
-	tests[2].solution.tree->nodes[11].functionNode.statementsStart = &tests[2].solution.tree->children[0];
+	tests[2].solution.tree->nodes[11].functionNode.statements.nodes = &tests[2].solution.tree->children[0];
 	tests[2].solution.tree->children[0] = tests[2].solution.tree->nodes + 6;
 	tests[2].solution.tree->children[1] = tests[2].solution.tree->nodes + 10;
 
 	tests[3].solution.tree->nodes[2].pointerNode.pointedNode = &tests[3].solution.tree->nodes[1];
 	tests[3].solution.tree->nodes[6].functionTypeNode.returnType = &tests[3].solution.tree->nodes[0];
-	tests[3].solution.tree->nodes[6].functionTypeNode.parameterTypesStart = &tests[3].solution.tree->children[0];
+	tests[3].solution.tree->nodes[6].functionTypeNode.parameterTypes.nodes = &tests[3].solution.tree->children[0];
 	tests[3].solution.tree->nodes[9].functionNode.type = &tests[3].solution.tree->nodes[6];
 	tests[3].solution.tree->nodes[9].functionNode.name = &tests[3].solution.tree->nodes[7];
-	tests[3].solution.tree->nodes[9].functionNode.parametersStart = &tests[3].solution.tree->children[2];
-	tests[3].solution.tree->nodes[9].functionNode.statementsStart = &tests[3].solution.tree->children[4];
+	tests[3].solution.tree->nodes[9].functionNode.parameters.nodes = &tests[3].solution.tree->children[2];
+	tests[3].solution.tree->nodes[9].functionNode.statements.nodes = &tests[3].solution.tree->children[4];
 	tests[3].solution.tree->children[0] = tests[3].solution.tree->nodes + 2;
 	tests[3].solution.tree->children[1] = tests[3].solution.tree->nodes + 4;
 	tests[3].solution.tree->children[2] = tests[3].solution.tree->nodes + 3;
@@ -2540,7 +2907,7 @@ static void cymbTestProgram(CymbTestContext* const context)
 	context->strings[context->stringCount] = buffer;
 	++context->stringCount;
 
-	const CymbConstString test0String = {"int some_func(){return 1;} int main(void){return 0;}", 52};
+	const CymbConstString test0String = CYMB_STRING("int some_func(){return 1;} int main(void){return 0;}");
 
 	const CymbTreeTest tests[] = {
 		{{
@@ -2729,7 +3096,7 @@ static void cymbTestProgram(CymbTestContext* const context)
 					},
 					{
 						.type = CYMB_NODE_FUNCTION,
-						.functionNode = {.statementsCount = 1},
+						.functionNode = {.statements = {.count = 1}},
 						.info = tests[0].tokens.tokens[1].info
 					},
 					{
@@ -2757,12 +3124,12 @@ static void cymbTestProgram(CymbTestContext* const context)
 					},
 					{
 						.type = CYMB_NODE_FUNCTION,
-						.functionNode = {.statementsCount = 1},
+						.functionNode = {.statements = {.count = 1}},
 						.info = tests[0].tokens.tokens[10].info
 					},
 					{
 						.type = CYMB_NODE_PROGRAM,
-						.programNode = {.childrenCount = 2}
+						.programNode = {.children = {.count = 2}}
 					}
 				},
 				.count = 13,
@@ -2777,13 +3144,13 @@ static void cymbTestProgram(CymbTestContext* const context)
 	tests[0].solution.tree->nodes[4].returnNode = &tests[0].solution.tree->nodes[3];
 	tests[0].solution.tree->nodes[5].functionNode.type = &tests[0].solution.tree->nodes[1];
 	tests[0].solution.tree->nodes[5].functionNode.name = &tests[0].solution.tree->nodes[2];
-	tests[0].solution.tree->nodes[5].functionNode.statementsStart = &tests[0].solution.tree->children[0];
+	tests[0].solution.tree->nodes[5].functionNode.statements.nodes = &tests[0].solution.tree->children[0];
 	tests[0].solution.tree->nodes[7].functionTypeNode.returnType = &tests[0].solution.tree->nodes[6];
 	tests[0].solution.tree->nodes[10].returnNode = &tests[0].solution.tree->nodes[9];
 	tests[0].solution.tree->nodes[11].functionNode.type = &tests[0].solution.tree->nodes[7];
 	tests[0].solution.tree->nodes[11].functionNode.name = &tests[0].solution.tree->nodes[8];
-	tests[0].solution.tree->nodes[11].functionNode.statementsStart = &tests[0].solution.tree->children[1];
-	tests[0].solution.tree->nodes[12].programNode.childrenStart = &tests[0].solution.tree->children[2];
+	tests[0].solution.tree->nodes[11].functionNode.statements.nodes = &tests[0].solution.tree->children[1];
+	tests[0].solution.tree->nodes[12].programNode.children.nodes = &tests[0].solution.tree->children[2];
 	tests[0].solution.tree->children[0] = tests[0].solution.tree->nodes + 4;
 	tests[0].solution.tree->children[1] = tests[0].solution.tree->nodes + 10;
 	tests[0].solution.tree->children[2] = tests[0].solution.tree->nodes + 5;

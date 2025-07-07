@@ -41,9 +41,9 @@ static void cymbCompareTokens(const CymbToken* const first, const CymbToken* con
 	}
 	else if(first->type == CYMB_TOKEN_CONSTANT)
 	{
-		if(first->constant.type != second->constant.type || first->constant.value != second->constant.value)
+		if(first->constant.type != second->constant.type)
 		{
-			cymbFail(context, "Wrong constant.");
+			cymbFail(context, "Wrong constant type.");
 		}
 
 		if(first->constant.value != second->constant.value)
@@ -480,9 +480,9 @@ static void cymbTestConstants(CymbTestContext* const context)
 			.position = {1, 1},
 			.line = {tests[7].string, 2}
 		}},
-		{.string = "5xyz", .result = CYMB_PARSE_INVALID, .solution = {
+		{.string = "0xyz", .result = CYMB_PARSE_INVALID, .solution = {
 			.type = CYMB_TOKEN_CONSTANT,
-			.constant = {.type = CYMB_CONSTANT_INT, .value = 5},
+			.constant = {.type = CYMB_CONSTANT_INT, .value = 0},
 			.info = {
 				.position = {1, 1},
 				.line = {tests[8].string, 4},
@@ -504,6 +504,166 @@ static void cymbTestConstants(CymbTestContext* const context)
 			.string = tests[8].string + 4,
 			.position = {1, 5},
 			.line = {tests[8].string, 4}
+		}},
+		{.string = "0'1'23'4", .result = CYMB_PARSE_MATCH, .solution = {
+			.type = CYMB_TOKEN_CONSTANT,
+			.constant = {.type = CYMB_CONSTANT_INT, .value = 01234},
+			.info = {
+				.position = {1, 1},
+				.line = {tests[9].string, 8},
+				.hint = {tests[9].string, 8}
+			}
+		}, .reader = {
+			.string = tests[9].string + 8,
+			.position = {1, 9},
+			.line = {tests[9].string, 8}
+		}},
+		{.string = "0x'12''3'''4'\n", .result = CYMB_PARSE_INVALID, .solution = {
+			.type = CYMB_TOKEN_CONSTANT,
+			.constant = {.type = CYMB_CONSTANT_INT, .value = 0x1234},
+			.info = {
+				.position = {1, 1},
+				.line = {tests[10].string, 13},
+				.hint = {tests[10].string, 13}
+			}
+		}, .diagnostics = {
+			.count = 5,
+			.diagnostics = (const CymbDiagnostic[]){
+				{
+					.type = CYMB_SEPARATOR_AFTER_BASE,
+					.info = {
+						.position = {1, 3},
+						.line = {tests[10].string, 13},
+						.hint = {tests[10].string + 2, 1}
+					}
+				},
+				{
+					.type = CYMB_DUPLICATE_SEPARATOR,
+					.info = {
+						.position = {1, 7},
+						.line = {tests[10].string, 13},
+						.hint = {tests[10].string + 6, 1}
+					}
+				},
+				{
+					.type = CYMB_DUPLICATE_SEPARATOR,
+					.info = {
+						.position = {1, 10},
+						.line = {tests[10].string, 13},
+						.hint = {tests[10].string + 9, 1}
+					}
+				},
+				{
+					.type = CYMB_DUPLICATE_SEPARATOR,
+					.info = {
+						.position = {1, 11},
+						.line = {tests[10].string, 13},
+						.hint = {tests[10].string + 10, 1}
+					}
+				},
+				{
+					.type = CYMB_TRAILING_SEPARATOR,
+					.info = {
+						.position = {1, 13},
+						.line = {tests[10].string, 13},
+						.hint = {tests[10].string + 12, 1}
+					}
+				}
+			}
+		}, .reader = {
+			.string = tests[10].string + 13,
+			.position = {1, 14},
+			.line = {tests[10].string, 13}
+		}},
+		{.string = "0b'''101'''lu", .result = CYMB_PARSE_INVALID, .solution = {
+			.type = CYMB_TOKEN_CONSTANT,
+			.constant = {.type = CYMB_CONSTANT_UNSIGNED_LONG, .value = 0b101},
+			.info = {
+				.position = {1, 1},
+				.line = {tests[11].string, 13},
+				.hint = {tests[11].string, 13}
+			}
+		}, .diagnostics = {
+			.count = 6,
+			.diagnostics = (const CymbDiagnostic[]){
+				{
+					.type = CYMB_SEPARATOR_AFTER_BASE,
+					.info = {
+						.position = {1, 3},
+						.line = {tests[11].string, 13},
+						.hint = {tests[11].string + 2, 1}
+					}
+				},
+				{
+					.type = CYMB_DUPLICATE_SEPARATOR,
+					.info = {
+						.position = {1, 4},
+						.line = {tests[11].string, 13},
+						.hint = {tests[11].string + 3, 1}
+					}
+				},
+				{
+					.type = CYMB_DUPLICATE_SEPARATOR,
+					.info = {
+						.position = {1, 5},
+						.line = {tests[11].string, 13},
+						.hint = {tests[11].string + 4, 1}
+					}
+				},
+				{
+					.type = CYMB_DUPLICATE_SEPARATOR,
+					.info = {
+						.position = {1, 10},
+						.line = {tests[11].string, 13},
+						.hint = {tests[11].string + 9, 1}
+					}
+				},
+				{
+					.type = CYMB_DUPLICATE_SEPARATOR,
+					.info = {
+						.position = {1, 11},
+						.line = {tests[11].string, 13},
+						.hint = {tests[11].string + 10, 1}
+					}
+				},
+				{
+					.type = CYMB_TRAILING_SEPARATOR,
+					.info = {
+						.position = {1, 11},
+						.line = {tests[11].string, 13},
+						.hint = {tests[11].string + 10, 1}
+					}
+				}
+			}
+		}, .reader = {
+			.string = tests[11].string + 13,
+			.position = {1, 14},
+			.line = {tests[11].string, 13}
+		}},
+		{.string = "0b''", .result = CYMB_PARSE_INVALID, .solution = {
+			.type = CYMB_TOKEN_CONSTANT,
+			.constant = {.type = CYMB_CONSTANT_INT, .value = 0},
+			.info = {
+				.position = {1, 1},
+				.line = {tests[12].string, 4},
+				.hint = {tests[12].string, 2}
+			}
+		}, .diagnostics = {
+			.count = 1,
+			.diagnostics = (const CymbDiagnostic[]){
+				{
+					.type = CYMB_INVALID_CONSTANT_SUFFIX,
+					.info = {
+						.position = {1, 2},
+						.line = {tests[12].string, 4},
+						.hint = {tests[12].string + 1, 1}
+					}
+				}
+			}
+		}, .reader = {
+			.string = tests[12].string + 2,
+			.position = {1, 3},
+			.line = {tests[12].string, 4}
 		}}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);

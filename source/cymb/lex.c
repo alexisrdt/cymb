@@ -13,9 +13,6 @@ typedef struct CymbMapping
 	CymbTokenType token;
 } CymbMapping;
 
-#define CYMB_STRING(string) \
-{string, sizeof(string) - 1}
-
 // Keywords must be stored from longest to shortest and in alphabetical order for bsearch.
 // They could also be stored from shortest to longest, longer keywords would not be missed (e.g. "do" and "double") because the length of the identifier is known.
 static const CymbMapping keywordMap[] = {
@@ -359,19 +356,14 @@ CymbResult cymbParseToken(CymbReader* const reader, CymbParseResult* const parse
  */
 static bool cymbIsDigit(const char character, const unsigned char base)
 {
-	static const char* const digits = "0123456789ABCDEF";
-
 	const char upperCharacter = toupper((unsigned char)character);
 
-	for(unsigned char digitIndex = 0; digitIndex < base; ++digitIndex)
+	if(upperCharacter >= '0' && upperCharacter <= '9')
 	{
-		if(upperCharacter == digits[digitIndex])
-		{
-			return true;
-		}
+		return upperCharacter - '0' < base;
 	}
 
-	return false;
+	return base == 16 && upperCharacter >= 'A' && upperCharacter <= 'F';
 }
 
 CymbResult cymbParseConstant(CymbReader* const reader, CymbParseResult* const parseResult, CymbToken* const token, CymbDiagnosticList* const diagnostics)
@@ -389,168 +381,88 @@ CymbResult cymbParseConstant(CymbReader* const reader, CymbParseResult* const pa
 	token->info.line = reader->line;
 	token->info.hint.string = reader->string;
 
-	unsigned char base = 10;
+	const char* const start = reader->string;
 
+	// Parse base.
+	unsigned char base = 10;
 	if(reader->string[0] == '0')
 	{
-		if(tolower((unsigned char)reader->string[1]) == 'x' && cymbIsDigit(reader->string[2], 16))
-		{
-			base = 16;
-			cymbReaderSkip(reader, 2);
-		}
-		else if(tolower((unsigned char)reader->string[1]) == 'b' && cymbIsDigit(reader->string[2], 2))
-		{
-			base = 2;
-			cymbReaderSkip(reader, 2);
-		}
-		else if(isdigit((unsigned char)reader->string[1]))
-		{
-			base = 8;
-			cymbReaderPop(reader);
-		}
-	}
+		const char baseCharacter = tolower((unsigned char)reader->string[1]);
 
-	CymbConstantType type = CYMB_CONSTANT_INT;
-
-	const char* suffix = reader->string;
-	while(cymbIsDigit(*suffix, base))
-	{
-		++suffix;
-	}
-	if(isalpha((unsigned char)*suffix))
-	{
-		const unsigned char characters[] = {
-			tolower((unsigned char)suffix[0]),
-			tolower((unsigned char)suffix[1]),
-			characters[1] == '\0' ? '\0': tolower((unsigned char)suffix[2]),
-			characters[2] == '\0' ? '\0' : suffix[3]
-		};
-
-		if(
-			(
-				(characters[0] == 'u' && characters[1] == 'l' && characters[2] == characters[1]) ||
-				(characters[0] == 'l' && characters[1] == characters[0] && characters[2] == 'u')
-			) && !isalnum(characters[3])
-		)
+		switch(baseCharacter)
 		{
-			type = CYMB_CONSTANT_UNSIGNED_LONG_LONG;
+			case 'x':
+				base = 16;
+				break;
+
+			case 'b':
+				base = 2;
+				break;
+
+			default:
+				base = 8;
+				break;
 		}
 
-		else if(
-			(
-				(characters[0] == 'u' && characters[1] == 'l') ||
-				(characters[0] == 'l' && characters[1] == 'u')
-			) && !isalnum(characters[2])
-		)
+		if(base != 8)
 		{
-			type = CYMB_CONSTANT_UNSIGNED_LONG;
-		}
-
-		else if(
-			characters[0] == 'u' && !isalnum(characters[1])
-		)
-		{
-			type = CYMB_CONSTANT_UNSIGNED_INT;
-		}
-
-		else if(
-			characters[0] == 'l' && characters[1] == characters[0] && !isalnum(characters[2])
-		)
-		{
-			type = CYMB_CONSTANT_LONG_LONG;
-		}
-
-		else if(
-			characters[0] == 'l' && !isalnum(characters[1])
-		)
-		{
-			type = CYMB_CONSTANT_LONG;
-		}
-
-		else
-		{
-			const char* suffixEnd = suffix;
-			while(isalnum((unsigned char)*suffixEnd) || *suffixEnd == '_')
+			const char* separators = reader->string + 2;
+			while(*separators == '\'')
 			{
-				++suffixEnd;
+				++separators;
 			}
 
-			const CymbDiagnostic diagnostic = {
-				.type = CYMB_INVALID_CONSTANT_SUFFIX,
-				.info = {
-					.position = {token->info.position.line, token->info.position.column + suffix - reader->string},
-					.line = token->info.line,
-					.hint = {suffix, suffixEnd - suffix}
-				}
-			};
-
-			const CymbResult result = cymbDiagnosticAdd(diagnostics, &diagnostic);
-			if(result != CYMB_SUCCESS)
-			{
-				return result;
-			}
-
-			*parseResult = CYMB_PARSE_INVALID;
+			base = cymbIsDigit(*separators, base) ? base : 8;
 		}
+
+		cymbReaderSkip(reader, 2 * (base != 8));
 	}
 
-	const bool isUnsigned = type >= CYMB_CONSTANT_UNSIGNED_INT;
-
-	unsigned long long compare = INT_MAX;
-	switch(type)
+	const char* end = reader->string;
+	while(cymbIsDigit(*end, base) || *end == '\'')
 	{
-		case CYMB_CONSTANT_UNSIGNED_LONG_LONG:
-			compare = ULLONG_MAX;
-			break;
-
-		case CYMB_CONSTANT_UNSIGNED_LONG:
-			compare = ULONG_MAX;
-			break;
-
-		case CYMB_CONSTANT_UNSIGNED_INT:
-			compare = UINT_MAX;
-			break;
-
-		case CYMB_CONSTANT_LONG_LONG:
-			compare = LLONG_MAX;
-			break;
-
-		case CYMB_CONSTANT_LONG:
-			compare = LONG_MAX;
-			break;
-
-		case CYMB_CONSTANT_INT:
-			compare = INT_MAX;
-			break;
-
-		default:
-			unreachable();
+		++end;
 	}
+	while(isalnum((unsigned char)*end) || *end == '_')
+	{
+		++end;
+	}
+	token->info.hint.length = end - start;
 
+	// Parse value.
+	bool previousSeparator = false;
 	token->constant.value = 0;
-
-	while(cymbIsDigit(*reader->string, base))
+	if(*reader->string == '\'')
 	{
-		const unsigned char c = ('0' <= *reader->string && *reader->string <= '9') ? *reader->string - '0' : (unsigned char)(tolower((unsigned char)*reader->string) - 'a' + 10);
-		cymbReaderPop(reader);
-
-		while(token->constant.value > (compare - c) / base)
-		{
-			if(compare == LLONG_MAX && base != 10 && !isUnsigned)
-			{
-				compare = ULLONG_MAX;
-				type = CYMB_CONSTANT_UNSIGNED_LONG_LONG;
+		const CymbDiagnostic diagnostic = {
+			.type = CYMB_SEPARATOR_AFTER_BASE,
+			.info = {
+				.position = reader->position,
+				.line = reader->line,
+				.hint = {reader->string, 1}
 			}
-			else if(compare == ULLONG_MAX || compare == LLONG_MAX)
-			{
-				*parseResult = CYMB_PARSE_INVALID;
+		};
+		const CymbResult result = cymbDiagnosticAdd(diagnostics, &diagnostic);
+		if(result != CYMB_SUCCESS)
+		{
+			return result;
+		}
 
+		cymbReaderPop(reader);
+		previousSeparator = true;
+	}
+	while(cymbIsDigit(*reader->string, base) || *reader->string == '\'')
+	{
+		if(*reader->string == '\'')
+		{
+			if(previousSeparator)
+			{
 				const CymbDiagnostic diagnostic = {
-					.type = CYMB_CONSTANT_TOO_LARGE,
+					.type = CYMB_DUPLICATE_SEPARATOR,
 					.info = {
-						.position = token->info.position,
+						.position = reader->position,
 						.line = reader->line,
-						.hint = {token->info.hint.string, 1}
+						.hint = {reader->string, 1}
 					}
 				};
 				const CymbResult result = cymbDiagnosticAdd(diagnostics, &diagnostic);
@@ -558,79 +470,236 @@ CymbResult cymbParseConstant(CymbReader* const reader, CymbParseResult* const pa
 				{
 					return result;
 				}
+			}
 
-				break;
-			}
-			else if(compare == ULONG_MAX)
-			{
-				if(base == 10 || isUnsigned)
-				{
-					compare = ULLONG_MAX;
-					type = CYMB_CONSTANT_UNSIGNED_LONG_LONG;
-				}
-				else
-				{
-					compare = LLONG_MAX;
-					type = CYMB_CONSTANT_LONG_LONG;
-				}
-			}
-			else if(compare == LONG_MAX)
-			{
-				if(base == 10)
-				{
-					compare = LLONG_MAX;
-					type = CYMB_CONSTANT_LONG_LONG;
-				}
-				else
-				{
-					compare = ULONG_MAX;
-					type = CYMB_CONSTANT_UNSIGNED_LONG;
-				}
-			}
-			else if(compare == UINT_MAX)
-			{
-				if(base == 10 || isUnsigned)
-				{
-					compare = ULONG_MAX;
-					type = CYMB_CONSTANT_UNSIGNED_LONG;
-				}
-				else
-				{
-					compare = LONG_MAX;
-					type = CYMB_CONSTANT_LONG;
-				}
-			}
-			else if(compare == INT_MAX)
-			{
-				if(base == 10)
-				{
-					compare = LONG_MAX;
-					type = CYMB_CONSTANT_LONG;
-				}
-				else
-				{
-					compare = UINT_MAX;
-					type = CYMB_CONSTANT_UNSIGNED_INT;
-				}
-			}
-			else
-			{
-				unreachable();
-			}
+			previousSeparator = true;
+			goto next;
 		}
 
-		token->constant.value *= base;
-		token->constant.value += c;
-	}
+		previousSeparator = false;
 
-	token->constant.type = type;
+		const unsigned char digit = *reader->string - (*reader->string <= '9' ? '0' : 'A');
 
-	while(isalnum((unsigned char)*reader->string) || *reader->string == '_')
-	{
+		if(token->constant.value > (ULLONG_MAX - digit) / base)
+		{
+			*parseResult = CYMB_PARSE_INVALID;
+
+			const CymbDiagnostic diagnostic = {
+				.type = CYMB_CONSTANT_TOO_LARGE,
+				.info = token->info
+			};
+			const CymbResult result = cymbDiagnosticAdd(diagnostics, &diagnostic);
+			if(result != CYMB_SUCCESS)
+			{
+				return result;
+			}
+
+			break;
+		}
+
+		token->constant.value = token->constant.value * base + digit;
+
+		next:
 		cymbReaderPop(reader);
 	}
 
-	token->info.hint.length = reader->string - token->info.hint.string;
+	if(previousSeparator)
+	{
+		*parseResult = CYMB_PARSE_INVALID;
+
+		const CymbDiagnostic diagnostic = {
+			.type = CYMB_TRAILING_SEPARATOR,
+			.info = {
+				.position = {reader->position.line, reader->position.column - 1},
+				.line = reader->line,
+				.hint = {reader->string - 1, 1}
+			}
+		};
+		const CymbResult result = cymbDiagnosticAdd(diagnostics, &diagnostic);
+		if(result != CYMB_SUCCESS)
+		{
+			return result;
+		}
+	}
+
+	const char suffix[] = {
+		tolower(reader->string[0]),
+		suffix[0] == '\0' ? '\0' : tolower(reader->string[1]),
+		suffix[1] == '\0' ? '\0' : tolower(reader->string[2]),
+	};
+	if(
+		((suffix[0] == 'u' && suffix[1] == 'l' && reader->string[2] == reader->string[1]) ||
+		(suffix[0] == 'l' && reader->string[1] == reader->string[0] && suffix[2] == 'u')) &&
+		!isalnum((unsigned char)reader->string[3]) && reader->string[3] != '_'
+	)
+	{
+		token->constant.type = CYMB_CONSTANT_UNSIGNED_LONG_LONG;
+	}
+	else if(
+		((suffix[0] == 'u' && suffix[1] == 'l') ||
+		(suffix[0] == 'l' && suffix[1] == 'u')) &&
+		!isalnum((unsigned char)reader->string[2]) && reader->string[2] != '_'
+	)
+	{
+		token->constant.type = CYMB_CONSTANT_UNSIGNED_LONG;
+		if(token->constant.value > ULONG_MAX)
+		{
+			token->constant.type = CYMB_CONSTANT_UNSIGNED_LONG_LONG;
+		}
+	}
+	else if(suffix[0] == 'u' && !isalnum((unsigned char)reader->string[1]) && reader->string[1] != '_')
+	{
+		token->constant.type = CYMB_CONSTANT_UNSIGNED_INT;
+		if(token->constant.value > UINT_MAX)
+		{
+			token->constant.type = CYMB_CONSTANT_UNSIGNED_LONG;
+		}
+		if(token->constant.value > ULONG_MAX)
+		{
+			token->constant.type = CYMB_CONSTANT_UNSIGNED_LONG_LONG;
+		}
+	}
+	else if(suffix[0] == 'l' && reader->string[1] == reader->string[0] && !isalnum((unsigned char)reader->string[2]) && reader->string[2] != '_')
+	{
+		token->constant.type = CYMB_CONSTANT_LONG_LONG;
+		if(base == 10)
+		{
+			if(token->constant.value > LLONG_MAX)
+			{
+				*parseResult = CYMB_PARSE_INVALID;
+
+				const CymbDiagnostic diagnostic = {
+					.type = CYMB_CONSTANT_TOO_LARGE,
+					.info = token->info
+				};
+				const CymbResult result = cymbDiagnosticAdd(diagnostics, &diagnostic);
+				if(result != CYMB_SUCCESS)
+				{
+					return result;
+				}
+			}
+		}
+		else
+		{
+			if(token->constant.value > LLONG_MAX)
+			{
+				token->constant.type = CYMB_CONSTANT_UNSIGNED_LONG_LONG;
+			}
+		}
+	}
+	else if(suffix[0] == 'l' && !isalnum((unsigned char)reader->string[1]) && reader->string[1] != '_')
+	{
+		token->constant.type = CYMB_CONSTANT_LONG;
+		if(base == 10)
+		{
+			if(token->constant.value > LONG_MAX)
+			{
+				token->constant.type = CYMB_CONSTANT_LONG_LONG;
+			}
+			if(token->constant.value > LLONG_MAX)
+			{
+				*parseResult = CYMB_PARSE_INVALID;
+
+				const CymbDiagnostic diagnostic = {
+					.type = CYMB_CONSTANT_TOO_LARGE,
+					.info = token->info
+				};
+				const CymbResult result = cymbDiagnosticAdd(diagnostics, &diagnostic);
+				if(result != CYMB_SUCCESS)
+				{
+					return result;
+				}
+			}
+		}
+		else
+		{
+			if(token->constant.value > LONG_MAX)
+			{
+				token->constant.type = CYMB_CONSTANT_UNSIGNED_LONG;
+			}
+			if(token->constant.value > ULONG_MAX)
+			{
+				token->constant.type = CYMB_CONSTANT_LONG_LONG;
+			}
+			if(token->constant.value > LLONG_MAX)
+			{
+				token->constant.type = CYMB_CONSTANT_UNSIGNED_LONG_LONG;
+			}
+		}
+	}
+	else
+	{
+		token->constant.type = CYMB_CONSTANT_INT;
+		if(base == 10)
+		{
+			if(token->constant.value > INT_MAX)
+			{
+				token->constant.type = CYMB_CONSTANT_LONG;
+			}
+			if(token->constant.value > LONG_MAX)
+			{
+				token->constant.type = CYMB_CONSTANT_LONG_LONG;
+			}
+			if(token->constant.value > LLONG_MAX)
+			{
+				*parseResult = CYMB_PARSE_INVALID;
+
+				const CymbDiagnostic diagnostic = {
+					.type = CYMB_CONSTANT_TOO_LARGE,
+					.info = token->info
+				};
+				const CymbResult result = cymbDiagnosticAdd(diagnostics, &diagnostic);
+				if(result != CYMB_SUCCESS)
+				{
+					return result;
+				}
+			}
+		}
+		else
+		{
+			if(token->constant.value > INT_MAX)
+			{
+				token->constant.type = CYMB_CONSTANT_UNSIGNED_INT;
+			}
+			if(token->constant.value > UINT_MAX)
+			{
+				token->constant.type = CYMB_CONSTANT_LONG;
+			}
+			if(token->constant.value > LONG_MAX)
+			{
+				token->constant.type = CYMB_CONSTANT_UNSIGNED_LONG;
+			}
+			if(token->constant.value > ULONG_MAX)
+			{
+				token->constant.type = CYMB_CONSTANT_LONG_LONG;
+			}
+			if(token->constant.value > LLONG_MAX)
+			{
+				token->constant.type = CYMB_CONSTANT_UNSIGNED_LONG_LONG;
+			}
+		}
+
+		if(isalnum((unsigned char)reader->string[0]) || reader->string[0] == '_')
+		{
+			*parseResult = CYMB_PARSE_INVALID;
+
+			const CymbDiagnostic diagnostic = {
+				.type = CYMB_INVALID_CONSTANT_SUFFIX,
+				.info = {
+					.position = reader->position,
+					.line = reader->line,
+					.hint = {reader->string, end - reader->string}
+				}
+			};
+			const CymbResult result = cymbDiagnosticAdd(diagnostics, &diagnostic);
+			if(result != CYMB_SUCCESS)
+			{
+				return result;
+			}
+		}
+	}
+
+	cymbReaderSkip(reader, end - reader->string);
 
 	return CYMB_SUCCESS;
 }

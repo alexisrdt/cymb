@@ -2,8 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "cymb/arguments.h"
 #include "cymb/memory.h"
+#include "cymb/options.h"
 #include "test.h"
 
 void cymbFail(CymbTestContext* const context, const char* const string)
@@ -125,61 +125,161 @@ static void cymbTestArguments(CymbTestContext* const context)
 	context->strings[context->stringCount] = buffer;
 	++context->stringCount;
 
-	CymbOptions options;
-
-	snprintf(buffer, sizeof(buffer), format, __func__, (size_t)0);
-
-	const char* const args1[] = {"-std=c"};
-	if(cymbParseArguments(CYMB_LENGTH(args1), args1, &options) != CYMB_ERROR_INVALID_ARGUMENT)
+	const struct
 	{
-		cymbFail(context, "Wrong result.");
-	}
-	if(options.input || options.output)
-	{
-		cymbFail(context, "Wrong options.");
-	}
-
-	snprintf(buffer, sizeof(buffer), format, __func__, (size_t)1);
-
-	const char* const args2[] = {"test.c"};
-	if(cymbParseArguments(CYMB_LENGTH(args2), args2, &options) != CYMB_SUCCESS)
-	{
-		cymbFail(context, "Wrong result.");
-	}
-
-	if(!options.input || !options.output || options.debug || options.version != CYMB_C23)
-	{
-		cymbFail(context, "Wrong options.");
-	}
-
-	if(strcmp(options.input, args2[0]) != 0 || strcmp(options.output, "test.s") != 0)
-	{
-		cymbFail(context, "Wrong strings.");
-	}
-
-	free(options.input);
-	free(options.output);
-
-	snprintf(buffer, sizeof(buffer), format, __func__, (size_t)2);
-
-	const char* const args3[] = {
-		"test.c",
-		"-o",
-		"output.s",
-		"-std=c23"
+		const CymbConstString* arguments;
+		size_t argumentCount;
+		CymbResult result;
+		CymbOptions options;
+		CymbConstDiagnosticList diagnostics;
+	} tests[] = {
+		{(const CymbConstString[]){
+			CYMB_STRING("main.c")
+		}, 1, CYMB_SUCCESS, {
+			.inputs = (const char*[]){
+				tests[0].arguments[0].string
+			},
+			.inputCount = 1,
+			.standard = CYMB_C23,
+			.tabWidth = 8
+		}, {}},
+		{(const CymbConstString[]){
+			CYMB_STRING("-o"),
+			CYMB_STRING("main.s"),
+			CYMB_STRING("main.c"),
+			CYMB_STRING("--output=-main.s-")
+		}, 4, CYMB_SUCCESS, {
+			.inputs = (const char*[]){
+				tests[1].arguments[2].string
+			},
+			.inputCount = 1,
+			.output = tests[1].arguments[3].string + 9,
+			.standard = CYMB_C23,
+			.tabWidth = 8
+		}, {}},
+		{(const CymbConstString[]){
+			CYMB_STRING("--output")
+		}, 1, CYMB_ERROR_INVALID_ARGUMENT, {}, {
+			.diagnostics = (CymbDiagnostic[]){
+				{
+					.type = CYMB_MISSING_ARGUMENT,
+					.info = {
+						.hint = {tests[2].arguments[0].string + 2, tests[2].arguments[0].length - 2}
+					}
+				},
+				{
+					.type = CYMB_MISSING_ARGUMENT
+				}
+			},
+			.count = 2
+		}},
+		{(const CymbConstString[]){
+			CYMB_STRING("main.c"),
+			CYMB_STRING("--some-option")
+		}, 2, CYMB_ERROR_INVALID_ARGUMENT, {}, {
+			.diagnostics = (CymbDiagnostic[]){
+				{
+					.type = CYMB_UNKNOWN_OPTION,
+					.info = {
+						.hint = {tests[3].arguments[1].string + 2, tests[3].arguments[1].length - 2}
+					}
+				}
+			},
+			.count = 1
+		}},
+		{(const CymbConstString[]){
+			CYMB_STRING("--standard"),
+			CYMB_STRING("c11"),
+			CYMB_STRING("main.c"),
+			CYMB_STRING("--tab-width=4")
+		}, 4, CYMB_SUCCESS, {
+			.inputs = (const char*[]){
+				tests[4].arguments[2].string
+			},
+			.inputCount = 1,
+			.tabWidth = 4,
+			.standard = CYMB_C11
+		}, {}},
+		{(const CymbConstString[]){
+			CYMB_STRING("main.c"),
+			CYMB_STRING("--tab-width=1"),
+			CYMB_STRING("--"),
+			CYMB_STRING("--help"),
+			CYMB_STRING("-v")
+		}, 5, CYMB_SUCCESS, {
+			.inputs = (const char*[]){
+				tests[5].arguments[0].string,
+				tests[5].arguments[3].string,
+				tests[5].arguments[4].string
+			},
+			.inputCount = 3,
+			.tabWidth = 1,
+			.standard = CYMB_C23
+		}, {}}
 	};
-	if(cymbParseArguments(CYMB_LENGTH(args3), args3, &options) != CYMB_SUCCESS)
-	{
-		cymbFail(context, "Wrong result.");
-	}
+	constexpr size_t testCount = CYMB_LENGTH(tests);
 
-	if(strcmp(options.input, args3[0]) != 0 || strcmp(options.output, "output.s") != 0 || options.version != CYMB_C23)
+	for(size_t testIndex = 0; testIndex < testCount; ++testIndex)
 	{
-		cymbFail(context, "Wrong options.");
-	}
+		snprintf(buffer, sizeof(buffer), format, __func__, testIndex);
 
-	free(options.input);
-	free(options.output);
+		context->diagnostics.count = 0;
+
+		CymbOptions options;
+		const CymbResult result = cymbParseArguments(tests[testIndex].arguments, tests[testIndex].argumentCount, &options, &context->diagnostics);
+		if(result != tests[testIndex].result)
+		{
+			cymbFail(context, "Wrong result.");
+		}
+
+		if(result == CYMB_SUCCESS)
+		{
+			if(options.debug != tests[testIndex].options.debug)
+			{
+				cymbFail(context, "Wrong debug.");
+			}
+
+			if(options.help != tests[testIndex].options.help)
+			{
+				cymbFail(context, "Wrong version.");
+			}
+
+			if(options.tabWidth != tests[testIndex].options.tabWidth)
+			{
+				cymbFail(context, "Wrong tab width.");
+			}
+
+			if(options.standard != tests[testIndex].options.standard)
+			{
+				cymbFail(context, "Wrong standard.");
+			}
+
+			if(options.inputCount != tests[testIndex].options.inputCount)
+			{
+				cymbFail(context, "Wrong input count.");
+			}
+			else
+			{
+				for(size_t inputIndex = 0; inputIndex < options.inputCount; ++inputIndex)
+				{
+					if(options.inputs[inputIndex] != tests[testIndex].options.inputs[inputIndex])
+					{
+						cymbFail(context, "Wrong input.");
+					}
+				}
+			}
+
+			if(options.output != tests[testIndex].options.output)
+			{
+				cymbFail(context, "Wrong output.");
+			}
+		}
+
+		cymbCompareDiagnostics(&(const CymbConstDiagnosticList){
+			.diagnostics = context->diagnostics.diagnostics,
+			.count = context->diagnostics.count
+		}, &tests[testIndex].diagnostics, context);
+	}
 
 	--context->stringCount;
 }

@@ -16,6 +16,7 @@ typedef enum CymbNodeType
 	CYMB_NODE_TYPE,
 	CYMB_NODE_POINTER,
 	CYMB_NODE_FUNCTION_TYPE,
+	CYMB_NODE_WHILE,
 	CYMB_NODE_RETURN,
 	CYMB_NODE_BINARY_OPERATOR,
 	CYMB_NODE_IDENTIFIER,
@@ -23,6 +24,19 @@ typedef enum CymbNodeType
 } CymbNodeType;
 
 typedef struct CymbNode CymbNode;
+
+/*
+ * A list of child nodes.
+ *
+ * Fields:
+ * - nodes: The children array.
+ * - count: The number of children.
+ */
+typedef struct CymbNodeList
+{
+	CymbNode** nodes;
+	size_t count;
+} CymbNodeList;
 
 /*
  * An object type.
@@ -94,8 +108,7 @@ typedef struct CymbFunctionTypeNode
 {
 	CymbNode* returnType;
 
-	CymbNode** parameterTypesStart;
-	size_t parameterTypesCount;
+	CymbNodeList parameterTypes;
 } CymbFunctionTypeNode;
 
 /*
@@ -107,8 +120,7 @@ typedef struct CymbFunctionTypeNode
  */
 typedef struct CymbProgramNode
 {
-	CymbNode** childrenStart;
-	size_t childrenCount;
+	CymbNodeList children;
 } CymbProgramNode;
 
 /*
@@ -127,11 +139,9 @@ typedef struct CymbFunctionNode
 	CymbNode* name;
 	CymbNode* type;
 
-	CymbNode** parametersStart;
-	size_t parametersCount;
+	CymbNodeList parameters;
 
-	CymbNode** statementsStart;
-	size_t statementsCount;
+	CymbNodeList statements;
 } CymbFunctionNode;
 
 /*
@@ -149,6 +159,18 @@ typedef struct CymbDeclarationNode
 	CymbNode* type;
 	CymbNode* initializer;
 } CymbDeclarationNode;
+
+/*
+ * A while node.
+ *
+ * Fields:
+ * -
+ */
+typedef struct CymbWhileNode
+{
+	CymbNode* expression;
+	CymbNodeList body;
+} CymbWhileNode;
 
 /*
  * A return node.
@@ -231,6 +253,7 @@ typedef struct CymbNode
 		CymbTypeNode typeNode;
 		CymbPointerNode pointerNode;
 		CymbFunctionTypeNode functionTypeNode;
+		CymbWhileNode whileNode;
 		CymbReturnNode returnNode;
 		CymbBinaryOperatorNode binaryOperatorNode;
 		CymbConstantNode constantNode;
