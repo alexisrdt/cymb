@@ -279,6 +279,11 @@ static void cymbTestArguments(CymbTestContext* const context)
 			.diagnostics = context->diagnostics.diagnostics,
 			.count = context->diagnostics.count
 		}, &tests[testIndex].diagnostics, context);
+
+		if(options.inputCount > 0)
+		{
+			free(options.inputs);
+		}
 	}
 
 	--context->stringCount;

@@ -1,8 +1,6 @@
 #ifndef CYMB_DIAGNOSTIC_H
 #define CYMB_DIAGNOSTIC_H
 
-#include <stddef.h>
-
 #include "cymb/memory.h"
 #include "cymb/result.h"
 

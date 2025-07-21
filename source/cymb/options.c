@@ -1,6 +1,7 @@
 #include "cymb/options.h"
 
 #include <ctype.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -455,7 +456,8 @@ CymbResult cymbParseArguments(const CymbConstString* const arguments, const size
 			{
 				if(inputsCapacity * sizeof(options->inputs[0]) == cymbSizeMax)
 				{
-					free(options->inputs);
+					CYMB_FREE(options->inputs);
+					options->inputCount = 0;
 					tooManyInputs = true;
 
 					const CymbDiagnostic diagnostic = {
@@ -478,7 +480,8 @@ CymbResult cymbParseArguments(const CymbConstString* const arguments, const size
 				const char** newInputs = realloc(options->inputs, newCapacity);
 				if(!newInputs)
 				{
-					free(options->inputs);
+					CYMB_FREE(options->inputs);
+					options->inputCount = 0;
 					result = CYMB_ERROR_OUT_OF_MEMORY;
 					goto end;
 				}
@@ -501,6 +504,8 @@ CymbResult cymbParseArguments(const CymbConstString* const arguments, const size
 			}
 			if(result == CYMB_ERROR_OUT_OF_MEMORY)
 			{
+				CYMB_FREE(options->inputs);
+				options->inputCount = 0;
 				goto end;
 			}
 
@@ -521,6 +526,8 @@ CymbResult cymbParseArguments(const CymbConstString* const arguments, const size
 		}
 		if(result == CYMB_ERROR_OUT_OF_MEMORY)
 		{
+			CYMB_FREE(options->inputs);
+			options->inputCount = 0;
 			goto end;
 		}
 
@@ -534,7 +541,7 @@ CymbResult cymbParseArguments(const CymbConstString* const arguments, const size
 
 	if(options->inputCount == 0)
 	{
-		free(options->inputs);
+		CYMB_FREE(options->inputs);
 
 		if(!options->help && !options->version)
 		{

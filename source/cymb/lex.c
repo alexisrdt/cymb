@@ -873,5 +873,6 @@ CymbResult cymbLex(const char* const string, CymbTokenList* const tokens, CymbDi
 
 void cymbFreeTokenList(CymbTokenList* const tokens)
 {
-	free(tokens->tokens);
+	CYMB_FREE(tokens->tokens);
+	tokens->count = 0;
 }

@@ -1,15 +1,22 @@
 int some_func()
 {
-	struct thing a;
+	int a;
 	int b = 0;
+
+	a = (b + 3) * 5;
+	b += a % 2;
 
 	return b + 1;
 }
 
 int main(void)
 {
-	while(1)
+	unsigned char c = 100;
+
+	while(c > 0)
 	{
-		return 0;
+		--c;
 	}
+
+	return 0;
 }

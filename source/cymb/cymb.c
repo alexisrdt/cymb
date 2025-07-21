@@ -206,7 +206,7 @@ CymbResult cymbMain(const CymbConstString* const arguments, const size_t argumen
 		cymbPrintVersion();
 	}
 	
-	if(result != CYMB_SUCCESS)
+	if(result == CYMB_ERROR_OUT_OF_MEMORY)
 	{
 		goto end;
 	}
@@ -227,7 +227,7 @@ CymbResult cymbMain(const CymbConstString* const arguments, const size_t argumen
 		}
 	}
 
-	free(options.inputs);
+	CYMB_FREE(options.inputs);
 	cymbDiagnosticListFree(&diagnostics);
 
 	end:

@@ -156,276 +156,231 @@ CymbResult cymbSkipParentheses(const CymbConstTokenList* const tokens, const Cym
 	return result;
 }
 
-/*
- * Parse a binary operator.
- *
- * Parameters:
- * - builder: A tree builder.
- * - tokens: The tokens.
- * - operatorTokens: The tokens to match for the operator.
- * - binaryOperators: The corresponding operator types.
- * - count: the number of operators to check.
- * - parseResult: The result.
- * - diagnostics: A list of diagnostics.
- *
- * Returns:
- * - CYMB_SUCCESS on success.
- * - CYMB_ERROR_OUT_OF_MEMORY if a node or diagnostic could not be added.
- */
-static CymbResult cymbParseBinaryOperator(CymbTreeBuilder* const builder, CymbConstTokenList* const tokens, const CymbTokenType* const operatorTokens, const CymbBinaryOperator* const binaryOperators, const size_t count, CymbParseResult* const parseResult, CymbDiagnosticList* const diagnostics)
+typedef enum CymbAssociativity
+{
+	CYMB_LEFT_TO_RIGHT,
+	CYMB_RIGHT_TO_LEFT
+} CymbAssociativity;
+
+typedef struct CymbBinaryOperatorMapping
+{
+	CymbTokenType token;
+	CymbBinaryOperator operator;
+
+	unsigned char precedence;
+	CymbAssociativity associativity;
+} CymbBinaryOperatorMapping;
+
+constexpr CymbBinaryOperatorMapping binaryOperators[] = {
+	{CYMB_TOKEN_STAR, CYMB_BINARY_OPERATOR_MULTIPLICATION, 11, CYMB_LEFT_TO_RIGHT},
+	{CYMB_TOKEN_SLASH, CYMB_BINARY_OPERATOR_DIVISION, 11, CYMB_LEFT_TO_RIGHT},
+	{CYMB_TOKEN_PERCENT, CYMB_BINARY_OPERATOR_REMAINDER, 11, CYMB_LEFT_TO_RIGHT},
+	{CYMB_TOKEN_PLUS, CYMB_BINARY_OPERATOR_ADDITION, 10, CYMB_LEFT_TO_RIGHT},
+	{CYMB_TOKEN_MINUS, CYMB_BINARY_OPERATOR_SUBTRACTION, 10, CYMB_LEFT_TO_RIGHT},
+	{CYMB_TOKEN_LEFT_SHIFT, CYMB_BINARY_OPERATOR_LESSFT_SHIFT, 9, CYMB_LEFT_TO_RIGHT},
+	{CYMB_TOKEN_RIGHT_SHIFT, CYMB_BINARY_OPERATOR_RIGHT_SHIFT, 9, CYMB_LEFT_TO_RIGHT},
+	{CYMB_TOKEN_LESS, CYMB_BINARY_OPERATOR_LESS, 8, CYMB_LEFT_TO_RIGHT},
+	{CYMB_TOKEN_LESS_EQUAL, CYMB_BINARY_OPERATOR_LESS_EQUAL, 8, CYMB_LEFT_TO_RIGHT},
+	{CYMB_TOKEN_GREATER, CYMB_BINARY_OPERATOR_GREATER, 8, CYMB_LEFT_TO_RIGHT},
+	{CYMB_TOKEN_GREATER_EQUAL, CYMB_BINARY_OPERATOR_GREATER_EQUAL, 8, CYMB_LEFT_TO_RIGHT},
+	{CYMB_TOKEN_EQUAL_EQUAL, CYMB_BINARY_OPERATOR_EQUAL, 7, CYMB_LEFT_TO_RIGHT},
+	{CYMB_TOKEN_NOT_EQUAL, CYMB_BINARY_OPERATOR_NOT_EQUAL, 7, CYMB_LEFT_TO_RIGHT},
+	{CYMB_TOKEN_AMPERSAND, CYMB_BINARY_OPERATOR_BITWISE_AND, 6, CYMB_LEFT_TO_RIGHT},
+	{CYMB_TOKEN_CARET, CYMB_BINARY_OPERATOR_BITWISE_EXCLUSIVE_OR, 5, CYMB_LEFT_TO_RIGHT},
+	{CYMB_TOKEN_BAR, CYMB_BINARY_OPERATOR_BITWISE_OR, 4, CYMB_LEFT_TO_RIGHT},
+	{CYMB_TOKEN_AMPERSAND_AMPERSAND, CYMB_BINARY_OPERATOR_LOGICAL_AND, 3, CYMB_LEFT_TO_RIGHT},
+	{CYMB_TOKEN_BAR_BAR, CYMB_BINARY_OPERATOR_LOGICAL_OR, 2, CYMB_LEFT_TO_RIGHT},
+	{CYMB_TOKEN_EQUAL, CYMB_BINARY_OPERATOR_ASSIGNMENT, 1, CYMB_RIGHT_TO_LEFT},
+	{CYMB_TOKEN_PLUS_EQUAL, CYMB_BINARY_OPERATOR_ADDITION_ASSIGNMENT, 1, CYMB_RIGHT_TO_LEFT},
+	{CYMB_TOKEN_MINUS_EQUAL, CYMB_BINARY_OPERATOR_SUBTRACTION_ASSIGNMENT, 1, CYMB_RIGHT_TO_LEFT},
+	{CYMB_TOKEN_STAR_EQUAL, CYMB_BINARY_OPERATOR_MULTIPLICATION_ASSIGNMENT, 1, CYMB_RIGHT_TO_LEFT},
+	{CYMB_TOKEN_SLASH_EQUAL, CYMB_BINARY_OPERATOR_DIVISION_ASSIGNMENT, 1, CYMB_RIGHT_TO_LEFT},
+	{CYMB_TOKEN_PERCENT_EQUAL, CYMB_BINARY_OPERATOR_REMAINDER_ASSIGNMENT, 1, CYMB_RIGHT_TO_LEFT},
+	{CYMB_TOKEN_LEFT_SHIFT_EQUAL, CYMB_BINARY_OPERATOR_LEFT_SHIFT_ASSIGNMENT, 1, CYMB_RIGHT_TO_LEFT},
+	{CYMB_TOKEN_RIGHT_SHIFT_EQUAL, CYMB_BINARY_OPERATOR_RIGHT_SHIFT_ASSIGNMENT, 1, CYMB_RIGHT_TO_LEFT},
+	{CYMB_TOKEN_AMPERSAND_EQUAL, CYMB_BINARY_OPERATOR_BITWISE_AND_ASSIGNMENT, 1, CYMB_RIGHT_TO_LEFT},
+	{CYMB_TOKEN_CARET_EQUAL, CYMB_BINARY_OPERATOR_BITWISE_EXCLUSIVE_OR_ASSIGNMENT, 1, CYMB_RIGHT_TO_LEFT},
+	{CYMB_TOKEN_BAR_EQUAL, CYMB_BINARY_OPERATOR_BITWISE_OR_ASSIGNMENT, 1, CYMB_RIGHT_TO_LEFT}
+};
+constexpr size_t binaryOperatorCount = CYMB_LENGTH(binaryOperators);
+constexpr size_t binaryOperatorSize = sizeof(binaryOperators[0]);
+
+static int cymbCompareBinaryOperator(const void* const tokenVoid, const void* const operatorVoid)
+{
+	const CymbTokenType token = *(const CymbTokenType*)tokenVoid;
+	const CymbBinaryOperatorMapping* operator = operatorVoid;
+
+	return token != operator->token;
+}
+
+typedef struct CymbUnaryOperatorMapping
+{
+	CymbTokenType token;
+	CymbUnaryOperator operator;
+} CymbUnaryOperatorMapping;
+
+constexpr CymbUnaryOperatorMapping unaryOperators[] = {
+	{CYMB_TOKEN_PLUS, CYMB_UNARY_OPERATOR_POSITIVE},
+	{CYMB_TOKEN_MINUS, CYMB_UNARY_OPERATOR_NEGATIVE},
+	{CYMB_TOKEN_PLUS_PLUS, CYMB_UNARY_OPERATOR_INCREMENT},
+	{CYMB_TOKEN_MINUS_MINUS, CYMB_UNARY_OPERATOR_DECREMENT},
+	{CYMB_TOKEN_TILDE, CYMB_UNARY_OPERATOR_BITWISE_NOT},
+	{CYMB_TOKEN_EXCLAMATION, CYMB_UNARY_OPERATOR_LOGICAL_NOT},
+	{CYMB_TOKEN_AMPERSAND, CYMB_UNARY_OPERATOR_ADDRESS},
+	{CYMB_TOKEN_STAR, CYMB_UNARY_OPERATOR_INDIRECTION}
+};
+constexpr size_t unaryOperatorCount = CYMB_LENGTH(unaryOperators);
+constexpr size_t unaryOperatorSize = sizeof(unaryOperators[0]);
+
+static int cymbCompareUnaryOperator(const void* const tokenVoid, const void* const operatorVoid)
+{
+	const CymbTokenType token = *(const CymbTokenType*)tokenVoid;
+	const CymbUnaryOperatorMapping* operator = operatorVoid;
+
+	return token != operator->token;
+}
+
+static CymbResult cymbParseSubexpression(CymbTreeBuilder* const builder, CymbConstTokenList* const tokens, CymbParseResult* const parseResult, CymbDiagnosticList* const diagnostics, const unsigned char minimumPrecedence)
 {
 	CymbResult result = CYMB_SUCCESS;
+	*parseResult = CYMB_PARSE_MATCH;
 
-	size_t tokenIndex = tokens->count - 1;
-	while(tokenIndex > 0)
+	if(tokens->tokens[0].type == CYMB_TOKEN_OPEN_PARENTHESIS)
 	{
-		result = cymbSkipParentheses(tokens, CYMB_DIRECTION_BACKWARD, parseResult, &tokenIndex, diagnostics);
-		if(result != CYMB_SUCCESS || *parseResult == CYMB_PARSE_INVALID)
+		const CymbToken* const parenthesisToken = tokens->tokens;
+
+		++tokens->tokens;
+		--tokens->count;
+
+		result = cymbParseSubexpression(builder, tokens, parseResult, diagnostics, 0);
+		if(result != CYMB_SUCCESS || *parseResult != CYMB_PARSE_MATCH)
 		{
 			return result;
 		}
-		--tokenIndex;
 
-		size_t matchIndex;
-		for(matchIndex = 0; matchIndex < count; ++matchIndex)
+		if(tokens->count == 0)
 		{
-			if(tokens->tokens[tokenIndex].type == operatorTokens[matchIndex])
+			*parseResult = CYMB_PARSE_INVALID;
+
+			const CymbDiagnostic diagnostic = {
+				.type = CYMB_UNMATCHED_PARENTHESIS,
+				.info = parenthesisToken->info
+			};
+			return cymbDiagnosticAdd(diagnostics, &diagnostic);
+		}
+
+		++tokens->tokens;
+		--tokens->count;
+	}
+	else
+	{
+		const CymbUnaryOperatorMapping* const operator = cymbFind(&tokens->tokens[0].type, unaryOperators, unaryOperatorCount, unaryOperatorSize, cymbCompareUnaryOperator);
+		if(operator)
+		{
+			CymbNode node = {
+				.type = CYMB_NODE_UNARY_OPERATOR,
+				.info = tokens->tokens[0].info,
+				.unaryOperatorNode = {
+					.operator = operator->operator
+				}
+			};
+
+			++tokens->tokens;
+			--tokens->count;
+
+			result = cymbParseSubexpression(builder, tokens, parseResult, diagnostics, binaryOperators[0].precedence + 1);
+			if(result != CYMB_SUCCESS || *parseResult != CYMB_PARSE_MATCH)
 			{
-				goto parse;
+				return result;
+			}
+
+			node.unaryOperatorNode.node = builder->tree->nodes + builder->tree->count - 1;
+
+			result = cymbAddNode(builder, &node);
+			if(result != CYMB_SUCCESS)
+			{
+				return result;
 			}
 		}
-		continue;
-
-		parse:
-		if(tokenIndex == 0 || tokenIndex == tokens->count - 1)
+		else
 		{
-			*parseResult = CYMB_PARSE_NO_MATCH;
+			if(tokens->tokens[0].type != CYMB_TOKEN_CONSTANT && tokens->tokens[0].type != CYMB_TOKEN_IDENTIFIER)
+			{
+				*parseResult = CYMB_PARSE_INVALID;
+				return result;
+			}
+
+			CymbNode leftNode = {
+				.type =  tokens->tokens[0].type == CYMB_TOKEN_CONSTANT ? CYMB_NODE_CONSTANT : CYMB_NODE_IDENTIFIER,
+				.info = tokens->tokens[0].info
+			};
+			if(tokens->tokens[0].type == CYMB_TOKEN_CONSTANT)
+			{
+				leftNode.constantNode = tokens->tokens[0].constant;
+			}
+			result = cymbAddNode(builder, &leftNode);
+			if(result != CYMB_SUCCESS)
+			{
+				return result;
+			}
+
+			++tokens->tokens;
+			--tokens->count;
+		}
+	}
+
+	while(tokens->count > 0)
+	{
+		if(tokens->tokens[0].type == CYMB_TOKEN_CLOSE_PARENTHESIS)
+		{
 			return result;
 		}
 
-		result = cymbParseExpression(builder, &(CymbConstTokenList){
-			.tokens = tokens->tokens,
-			.count = tokenIndex
-		}, parseResult, diagnostics);
-		if(result != CYMB_SUCCESS || *parseResult == CYMB_PARSE_INVALID)
+		const CymbBinaryOperatorMapping* const operator = cymbFind(&tokens->tokens[0].type, binaryOperators, binaryOperatorCount, binaryOperatorSize, cymbCompareBinaryOperator);
+		if(!operator)
+		{
+			*parseResult = CYMB_PARSE_INVALID;
+			return result;
+		}
+
+		if(operator->precedence < minimumPrecedence || (operator->associativity == CYMB_LEFT_TO_RIGHT && operator->precedence == minimumPrecedence))
 		{
 			return result;
 		}
 
-		CymbNode* const leftNode = builder->tree->nodes + builder->tree->count - 1;
-
-		result = cymbParseExpression(builder, &(CymbConstTokenList){
-			.tokens = tokens->tokens + tokenIndex + 1,
-			.count = tokens->count - tokenIndex - 1
-		}, parseResult, diagnostics);
-		if(result != CYMB_SUCCESS || *parseResult == CYMB_PARSE_INVALID)
-		{
-			return result;
-		}
-
-		const CymbNode node = {
+		CymbNode operatorNode = {
 			.type = CYMB_NODE_BINARY_OPERATOR,
-			.info = tokens->tokens[tokenIndex].info,
+			.info = tokens->tokens[0].info,
 			.binaryOperatorNode = {
-				.operator = binaryOperators[matchIndex],
-				.leftNode = leftNode,
-				.rightNode = builder->tree->nodes + builder->tree->count - 1
+				.operator = operator->operator,
+				.leftNode = builder->tree->nodes + builder->tree->count - 1
 			}
 		};
-		result = cymbAddNode(builder, &node);
+
+		++tokens->tokens;
+		--tokens->count;
+
+		result = cymbParseSubexpression(builder, tokens, parseResult, diagnostics, operator->precedence);
+		if(result != CYMB_SUCCESS || *parseResult != CYMB_PARSE_MATCH)
+		{
+			return result;
+		}
+
+		operatorNode.binaryOperatorNode.rightNode = builder->tree->nodes + builder->tree->count - 1;
+
+		result = cymbAddNode(builder, &operatorNode);
 		if(result != CYMB_SUCCESS)
 		{
 			return result;
 		}
-
-		*parseResult = CYMB_PARSE_MATCH;
-		return result;
 	}
 
-	*parseResult = CYMB_PARSE_NO_MATCH;
 	return result;
 }
 
 CymbResult cymbParseExpression(CymbTreeBuilder* const builder, CymbConstTokenList* const tokens, CymbParseResult* const parseResult, CymbDiagnosticList* const diagnostics)
 {
-	// Remove potential outer parentheses.
-	size_t tokenIndex = 0;
-	CymbResult result = cymbSkipParentheses(tokens, CYMB_DIRECTION_FORWARD, parseResult, &tokenIndex, diagnostics);
-	if(result != CYMB_SUCCESS || *parseResult == CYMB_PARSE_INVALID)
-	{
-		return result;
-	}
-	if(tokens->tokens[tokenIndex].type == CYMB_TOKEN_CLOSE_PARENTHESIS && tokenIndex == tokens->count - 1)
-	{
-		if(tokens->count < 3)
-		{
-			*parseResult = CYMB_PARSE_NO_MATCH;
-			return result;
-		}
-
-		return cymbParseExpression(builder, &(CymbConstTokenList){
-			.tokens = tokens->tokens + 1,
-			.count = tokens->count - 2
-		}, parseResult, diagnostics);
-	}
-
-	{
-		constexpr CymbTokenType operatorTokens[] = {CYMB_TOKEN_BAR_BAR};
-		constexpr CymbBinaryOperator binaryOperators[] = {CYMB_BINARY_OPERATOR_LOR};
-		constexpr size_t count = CYMB_LENGTH(operatorTokens);
-		static_assert(CYMB_LENGTH(binaryOperators) == count);
-
-		result = cymbParseBinaryOperator(builder, tokens, operatorTokens, binaryOperators, count, parseResult, diagnostics);
-		if(result != CYMB_SUCCESS || *parseResult != CYMB_PARSE_NO_MATCH)
-		{
-			return result;
-		}
-	}
-
-	{
-		constexpr CymbTokenType operatorTokens[] = {CYMB_TOKEN_AMPERSAND_AMPERSAND};
-		constexpr CymbBinaryOperator binaryOperators[] = {CYMB_BINARY_OPERATOR_LAND};
-		constexpr size_t count = CYMB_LENGTH(operatorTokens);
-		static_assert(CYMB_LENGTH(binaryOperators) == count);
-
-		result = cymbParseBinaryOperator(builder, tokens, operatorTokens, binaryOperators, count, parseResult, diagnostics);
-		if(result != CYMB_SUCCESS || *parseResult != CYMB_PARSE_NO_MATCH)
-		{
-			return result;
-		}
-	}
-
-	{
-		constexpr CymbTokenType operatorTokens[] = {CYMB_TOKEN_BAR};
-		constexpr CymbBinaryOperator binaryOperators[] = {CYMB_BINARY_OPERATOR_OR};
-		constexpr size_t count = CYMB_LENGTH(operatorTokens);
-		static_assert(CYMB_LENGTH(binaryOperators) == count);
-
-		result = cymbParseBinaryOperator(builder, tokens, operatorTokens, binaryOperators, count, parseResult, diagnostics);
-		if(result != CYMB_SUCCESS || *parseResult != CYMB_PARSE_NO_MATCH)
-		{
-			return result;
-		}
-	}
-
-	{
-		constexpr CymbTokenType operatorTokens[] = {CYMB_TOKEN_CARET};
-		constexpr CymbBinaryOperator binaryOperators[] = {CYMB_BINARY_OPERATOR_XOR};
-		constexpr size_t count = CYMB_LENGTH(operatorTokens);
-		static_assert(CYMB_LENGTH(binaryOperators) == count);
-
-		result = cymbParseBinaryOperator(builder, tokens, operatorTokens, binaryOperators, count, parseResult, diagnostics);
-		if(result != CYMB_SUCCESS || *parseResult != CYMB_PARSE_NO_MATCH)
-		{
-			return result;
-		}
-	}
-
-	{
-		constexpr CymbTokenType operatorTokens[] = {CYMB_TOKEN_AMPERSAND};
-		constexpr CymbBinaryOperator binaryOperators[] = {CYMB_BINARY_OPERATOR_AND};
-		constexpr size_t count = CYMB_LENGTH(operatorTokens);
-		static_assert(CYMB_LENGTH(binaryOperators) == count);
-
-		result = cymbParseBinaryOperator(builder, tokens, operatorTokens, binaryOperators, count, parseResult, diagnostics);
-		if(result != CYMB_SUCCESS || *parseResult != CYMB_PARSE_NO_MATCH)
-		{
-			return result;
-		}
-	}
-
-	{
-		constexpr CymbTokenType operatorTokens[] = {CYMB_TOKEN_EQUAL_EQUAL, CYMB_TOKEN_NOT_EQUAL};
-		constexpr CymbBinaryOperator binaryOperators[] = {CYMB_BINARY_OPERATOR_EQ, CYMB_BINARY_OPERATOR_NEQ};
-		constexpr size_t count = CYMB_LENGTH(operatorTokens);
-		static_assert(CYMB_LENGTH(binaryOperators) == count);
-
-		result = cymbParseBinaryOperator(builder, tokens, operatorTokens, binaryOperators, count, parseResult, diagnostics);
-		if(result != CYMB_SUCCESS || *parseResult != CYMB_PARSE_NO_MATCH)
-		{
-			return result;
-		}
-	}
-
-	{
-		constexpr CymbTokenType operatorTokens[] = {CYMB_TOKEN_LESS, CYMB_TOKEN_LESS_EQUAL, CYMB_TOKEN_GREATER, CYMB_TOKEN_GREATER_EQUAL};
-		constexpr CymbBinaryOperator binaryOperators[] = {CYMB_BINARY_OPERATOR_LE, CYMB_BINARY_OPERATOR_LEQ, CYMB_BINARY_OPERATOR_GE, CYMB_BINARY_OPERATOR_GEQ};
-		constexpr size_t count = CYMB_LENGTH(operatorTokens);
-		static_assert(CYMB_LENGTH(binaryOperators) == count);
-
-		result = cymbParseBinaryOperator(builder, tokens, operatorTokens, binaryOperators, count, parseResult, diagnostics);
-		if(result != CYMB_SUCCESS || *parseResult != CYMB_PARSE_NO_MATCH)
-		{
-			return result;
-		}
-	}
-
-	{
-		constexpr CymbTokenType operatorTokens[] = {CYMB_TOKEN_LEFT_SHIFT, CYMB_TOKEN_RIGHT_SHIFT};
-		constexpr CymbBinaryOperator binaryOperators[] = {CYMB_BINARY_OPERATOR_LS, CYMB_BINARY_OPERATOR_RS};
-		constexpr size_t count = CYMB_LENGTH(operatorTokens);
-		static_assert(CYMB_LENGTH(binaryOperators) == count);
-
-		result = cymbParseBinaryOperator(builder, tokens, operatorTokens, binaryOperators, count, parseResult, diagnostics);
-		if(result != CYMB_SUCCESS || *parseResult != CYMB_PARSE_NO_MATCH)
-		{
-			return result;
-		}
-	}
-
-	{
-		constexpr CymbTokenType operatorTokens[] = {CYMB_TOKEN_PLUS, CYMB_TOKEN_MINUS};
-		constexpr CymbBinaryOperator binaryOperators[] = {CYMB_BINARY_OPERATOR_SUM, CYMB_BINARY_OPERATOR_DIF};
-		constexpr size_t count = CYMB_LENGTH(operatorTokens);
-		static_assert(CYMB_LENGTH(binaryOperators) == count);
-
-		result = cymbParseBinaryOperator(builder, tokens, operatorTokens, binaryOperators, count, parseResult, diagnostics);
-		if(result != CYMB_SUCCESS || *parseResult != CYMB_PARSE_NO_MATCH)
-		{
-			return result;
-		}
-	}
-
-	{
-		constexpr CymbTokenType operatorTokens[] = {CYMB_TOKEN_STAR, CYMB_TOKEN_SLASH, CYMB_TOKEN_PERCENT};
-		constexpr CymbBinaryOperator binaryOperators[] = {CYMB_BINARY_OPERATOR_MUL, CYMB_BINARY_OPERATOR_DIV, CYMB_BINARY_OPERATOR_MOD};
-		constexpr size_t count = CYMB_LENGTH(operatorTokens);
-		static_assert(CYMB_LENGTH(binaryOperators) == count);
-
-		result = cymbParseBinaryOperator(builder, tokens, operatorTokens, binaryOperators, count, parseResult, diagnostics);
-		if(result != CYMB_SUCCESS || *parseResult != CYMB_PARSE_NO_MATCH)
-		{
-			return result;
-		}
-	}
-
-	if(tokens->count == 1 && tokens->tokens[0].type == CYMB_TOKEN_CONSTANT)
-	{
-		*parseResult = CYMB_PARSE_MATCH;
-
-		const CymbNode node = {
-			.type = CYMB_NODE_CONSTANT,
-			.info = tokens->tokens[0].info,
-			.constantNode = tokens->tokens[0].constant
-		};
-
-		return cymbAddNode(builder, &node);
-	}
-
-	if(tokens->count == 1 && tokens->tokens[0].type == CYMB_TOKEN_IDENTIFIER)
-	{
-		*parseResult = CYMB_PARSE_MATCH;
-
-		const CymbNode node = {
-			.type = CYMB_NODE_IDENTIFIER,
-			.info = tokens->tokens[0].info
-		};
-
-		return cymbAddNode(builder, &node);
-	}
-
-	*parseResult = CYMB_PARSE_NO_MATCH;
-	return result;
+	return cymbParseSubexpression(builder, tokens, parseResult, diagnostics, 0);
 }
 
 CymbResult cymbParseType(CymbTreeBuilder* const builder, CymbConstTokenList* const tokens, CymbParseResult* const parseResult, CymbDiagnosticList* const diagnostics)
@@ -637,48 +592,6 @@ CymbResult cymbParseType(CymbTreeBuilder* const builder, CymbConstTokenList* con
 			goto append;
 		}
 
-		if(tokens->tokens[0].type == CYMB_TOKEN_STRUCT)
-		{
-			if(tokens->tokens[1].type != CYMB_TOKEN_IDENTIFIER)
-			{
-				*parseResult = CYMB_PARSE_INVALID;
-				return result;
-			}
-
-			type.type = CYMB_TYPE_STRUCT;
-			info = tokens->tokens[1].info;
-
-			goto append;
-		}
-
-		if(tokens->tokens[0].type == CYMB_TOKEN_ENUM)
-		{
-			if(tokens->tokens[1].type != CYMB_TOKEN_IDENTIFIER)
-			{
-				*parseResult = CYMB_PARSE_INVALID;
-				return result;
-			}
-
-			type.type = CYMB_TYPE_ENUM;
-			info = tokens->tokens[1].info;
-
-			goto append;
-		}
-
-		if(tokens->tokens[0].type == CYMB_TOKEN_UNION)
-		{
-			if(tokens->tokens[1].type != CYMB_TOKEN_IDENTIFIER)
-			{
-				*parseResult = CYMB_PARSE_INVALID;
-				return result;
-			}
-
-			type.type = CYMB_TYPE_UNION;
-			info = tokens->tokens[1].info;
-
-			goto append;
-		}
-
 		if(tokens->tokens[0].type == CYMB_TOKEN_UNSIGNED || tokens->tokens[1].type == CYMB_TOKEN_UNSIGNED)
 		{
 			const size_t typeIndex = tokens->tokens[0].type == CYMB_TOKEN_UNSIGNED;
@@ -784,10 +697,6 @@ CymbResult cymbParseType(CymbTreeBuilder* const builder, CymbConstTokenList* con
 		case CYMB_TOKEN__BOOL:
 		case CYMB_TOKEN_BOOL:
 			type.type = CYMB_TYPE_BOOL;
-			break;
-
-		case CYMB_TOKEN_IDENTIFIER:
-			type.type = CYMB_TYPE_OTHER;
 			break;
 
 		default:
@@ -905,6 +814,111 @@ static CymbResult cymbParseBlock(CymbTreeBuilder* const builder, CymbConstTokenL
 	return result;
 }
 
+static CymbResult cymbParseDeclaration(CymbTreeBuilder* const builder, CymbConstTokenList* const tokens, CymbParseResult* const parseResult, CymbDiagnosticList* const diagnostics)
+{
+	CymbResult result = CYMB_SUCCESS;
+
+	if(!cymbIsKeyword(tokens->tokens[0].type))
+	{
+		*parseResult = CYMB_PARSE_NO_MATCH;
+		return result;
+	}
+
+	const CymbToken* equalToken = tokens->tokens;
+	while(equalToken < tokens->tokens + tokens->count)
+	{
+		if(equalToken->type == CYMB_TOKEN_EQUAL)
+		{
+			break;
+		}
+
+		++equalToken;
+	}
+	const bool hasInitializer = equalToken < tokens->tokens + tokens->count;
+
+	if(hasInitializer && equalToken == tokens->tokens + tokens->count - 1)
+	{
+		*parseResult = CYMB_PARSE_INVALID;
+		return result;
+	}
+
+	if(equalToken < tokens->tokens + 2)
+	{
+		*parseResult = CYMB_PARSE_INVALID;
+		return result;
+	}
+
+	const CymbToken* const identifierToken = equalToken - 1;
+	if(identifierToken->type != CYMB_TOKEN_IDENTIFIER)
+	{
+		*parseResult = CYMB_PARSE_INVALID;
+		return result;
+	}
+
+	const CymbToken* typeToken = identifierToken;
+	do
+	{
+		--typeToken;
+
+		if
+		(
+			typeToken->type != CYMB_TOKEN_IDENTIFIER &&
+			!cymbIsKeyword(typeToken->type) &&
+			typeToken->type != CYMB_TOKEN_STAR
+		)
+		{
+			*parseResult = CYMB_PARSE_INVALID;
+			return result;
+		}
+	} while(typeToken > tokens->tokens);
+
+	result = cymbParseType(builder, &(CymbConstTokenList){
+		.tokens = tokens->tokens,
+		.count = equalToken - tokens->tokens - 1
+	}, parseResult, diagnostics);
+	if(result != CYMB_SUCCESS || *parseResult != CYMB_PARSE_MATCH)
+	{
+		return result;
+	}
+	CymbNode* const typeNode = builder->tree->nodes + builder->tree->count - 1;
+
+	const CymbNode identifierNode = {
+		.type = CYMB_NODE_IDENTIFIER,
+		.info = identifierToken->info
+	};
+	result = cymbAddNode(builder, &identifierNode);
+	if(result != CYMB_SUCCESS)
+	{
+		return result;
+	}
+	CymbNode* const identifierNodePointer = builder->tree->nodes + builder->tree->count - 1;
+
+	if(hasInitializer)
+	{
+		result = cymbParseExpression(builder, &(CymbConstTokenList){
+			.tokens = equalToken + 1,
+			.count = tokens->tokens + tokens->count - equalToken - 1
+		}, parseResult, diagnostics);
+		if(result != CYMB_SUCCESS || *parseResult != CYMB_PARSE_MATCH)
+		{
+			return result;
+		}
+	}
+
+	*parseResult = CYMB_PARSE_MATCH;
+
+	const CymbNode node = {
+		.type = CYMB_NODE_DECLARATION,
+		.declarationNode = {
+			.identifier = identifierNodePointer,
+			.type = typeNode,
+			.initializer = hasInitializer ? builder->tree->nodes + builder->tree->count - 1 : nullptr
+		},
+		.info = identifierToken->info
+	};
+	return cymbAddNode(builder, &node);
+}
+
 CymbResult cymbParseStatement(CymbTreeBuilder* const builder, CymbConstTokenList* const tokens, CymbParseResult* const parseResult, CymbDiagnosticList* const diagnostics)
 {
 	CymbResult result = CYMB_SUCCESS;
@@ -976,7 +990,7 @@ CymbResult cymbParseStatement(CymbTreeBuilder* const builder, CymbConstTokenList
 
 		++endToken;
 	}
-	if(endToken == tokens->tokens + tokens->count)
+	if(endToken == tokens->tokens + tokens->count || tokens->count <= 1)
 	{
 		*parseResult = CYMB_PARSE_NO_MATCH;
 		return result;
@@ -1012,111 +1026,27 @@ CymbResult cymbParseStatement(CymbTreeBuilder* const builder, CymbConstTokenList
 		goto append;
 	}
 
-	if(tokens->count >= 3)
+	result = cymbParseDeclaration(builder, &(CymbConstTokenList){
+		.tokens = tokens->tokens,
+		.count = endToken - tokens->tokens
+	}, parseResult, diagnostics);
+	if(result != CYMB_SUCCESS || *parseResult == CYMB_PARSE_INVALID)
 	{
-		const CymbToken* equalToken = tokens->tokens;
-		while(equalToken < endToken)
-		{
-			if(equalToken->type == CYMB_TOKEN_EQUAL)
-			{
-				break;
-			}
-
-			++equalToken;
-		}
-		const bool hasInitializer = equalToken < endToken;
-
-		if(hasInitializer && equalToken == endToken - 1)
-		{
-			*parseResult = CYMB_PARSE_INVALID;
-			return result;
-		}
-
-		if(equalToken < tokens->tokens + 2)
-		{
-			*parseResult = CYMB_PARSE_INVALID;
-			return result;
-		}
-
-		const CymbToken* const identifierToken = equalToken - 1;
-		if(identifierToken->type != CYMB_TOKEN_IDENTIFIER)
-		{
-			*parseResult = CYMB_PARSE_INVALID;
-			return result;
-		}
-
-		const CymbToken* typeToken = identifierToken;
-		do
-		{
-			--typeToken;
-
-			if
-			(
-				typeToken->type != CYMB_TOKEN_IDENTIFIER &&
-				!cymbIsKeyword(typeToken->type) &&
-				typeToken->type != CYMB_TOKEN_STAR
-			)
-			{
-				*parseResult = CYMB_PARSE_INVALID;
-				return result;
-			}
-		} while(typeToken > tokens->tokens);
-
-		result = cymbParseType(builder, &(CymbConstTokenList){
-			.tokens = tokens->tokens,
-			.count = equalToken - tokens->tokens - 1
-		}, parseResult, diagnostics);
-		if(result != CYMB_SUCCESS || *parseResult == CYMB_PARSE_INVALID)
-		{
-			return result;
-		}
-		CymbNode* const typeNode = builder->tree->nodes + builder->tree->count - 1;
-
-		const CymbNode identifierNode = {
-			.type = CYMB_NODE_IDENTIFIER,
-			.info = identifierToken->info
-		};
-		result = cymbAddNode(builder, &identifierNode);
-		if(result != CYMB_SUCCESS)
-		{
-			return result;
-		}
-		CymbNode* const identifierNodePointer = builder->tree->nodes + builder->tree->count - 1;
-
-		if(hasInitializer)
-		{
-			result = cymbParseExpression(builder, &(CymbConstTokenList){
-				.tokens = equalToken + 1,
-				.count = endToken - equalToken - 1
-			}, parseResult, diagnostics);
-			if(result != CYMB_SUCCESS || *parseResult == CYMB_PARSE_INVALID)
-			{
-				return result;
-			}
-		}
-
-		*parseResult = CYMB_PARSE_MATCH;
-
-		const CymbNode node = {
-			.type = CYMB_NODE_DECLARATION,
-			.declarationNode = {
-				.identifier = identifierNodePointer,
-				.type = typeNode,
-				.initializer = hasInitializer ? builder->tree->nodes + builder->tree->count - 1 : nullptr
-			},
-			.info = identifierToken->info
-		};
-		result = cymbAddNode(builder, &node);
-		if(result != CYMB_SUCCESS)
-		{
-			return result;
-		}
-
+		return result;
+	}
+	if(*parseResult == CYMB_PARSE_MATCH)
+	{
 		goto append;
 	}
 
-	*parseResult = CYMB_PARSE_NO_MATCH;
-	return result;
+	result = cymbParseExpression(builder, &(CymbConstTokenList){
+		.tokens = tokens->tokens,
+		.count = endToken - tokens->tokens
+	}, parseResult, diagnostics);
+	if(result != CYMB_SUCCESS || *parseResult != CYMB_PARSE_MATCH)
+	{
+		return result;
+	}
 
 	append:
 	*parseResult = CYMB_PARSE_MATCH;
@@ -1451,6 +1381,7 @@ CymbResult cymbParse(const CymbConstTokenList* const tokens, CymbTree* const tre
 
 void cymbFreeTree(CymbTree* const tree)
 {
-	free(tree->nodes);
-	free(tree->children);
+	CYMB_FREE(tree->nodes);
+	CYMB_FREE(tree->children);
+	tree->count = 0;
 }

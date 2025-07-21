@@ -61,7 +61,7 @@ int main(int argumentCount, char** arguments)
 	}
 
 	clear:
-	free(stringArguments);
+	CYMB_FREE(stringArguments);
 
 	end:
 	return result == CYMB_SUCCESS ? EXIT_SUCCESS : EXIT_FAILURE;

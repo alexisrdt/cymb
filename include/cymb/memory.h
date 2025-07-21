@@ -46,6 +46,19 @@ constexpr size_t cymbSizeMax = CYMB_MIN(PTRDIFF_MAX, SIZE_MAX);
 (sizeof(array) / sizeof((array)[0]))
 
 /*
+ * Free a pointer and set it to null to avoid dangling pointers.
+ *
+ * Parameters:
+ * - pointer: A pointer.
+ */
+#define CYMB_FREE(pointer) \
+do \
+{ \
+	free(pointer); \
+	(pointer) = nullptr; \
+} while(false);
+
+/*
  * Comparison function.
  *
  * Parameters:

@@ -1,5 +1,6 @@
 #include "cymb/diagnostic.h"
 
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -184,6 +185,8 @@ CymbResult cymbDiagnosticListCreate(CymbDiagnosticList* const diagnostics, const
 	if(!diagnostics->diagnostics)
 	{
 		diagnostics->capacity = 0;
+		diagnostics->file = nullptr;
+		diagnostics->tabWidth = 0;
 		return CYMB_ERROR_OUT_OF_MEMORY;
 	}
 
@@ -195,7 +198,11 @@ CymbResult cymbDiagnosticListCreate(CymbDiagnosticList* const diagnostics, const
 
 void cymbDiagnosticListFree(CymbDiagnosticList* const diagnostics)
 {
-	free(diagnostics->diagnostics);
+	CYMB_FREE(diagnostics->diagnostics);
+	diagnostics->count = 0;
+	diagnostics->capacity = 0;
+	diagnostics->file = nullptr;
+	diagnostics->tabWidth = 0;
 }
 
 CymbResult cymbDiagnosticAdd(CymbDiagnosticList* const diagnostics, const CymbDiagnostic* const diagnostic)
