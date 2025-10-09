@@ -8,135 +8,118 @@
 #include "cymb/reader.h"
 #include "cymb/result.h"
 
-#define CYMB_TOKEN(F) \
-	F(IDENTIFIER) \
-	/* Keywords */ \
-	F(VOID) \
-	F(_BOOL) \
-	F(BOOL) \
-	F(FALSE) \
-	F(TRUE) \
-	F(CHAR) \
-	F(SHORT) \
-	F(INT) \
-	F(LONG) \
-	F(FLOAT) \
-	F(DOUBLE) \
-	F(_DECIMAL_32) \
-	F(_DECIMAL_64) \
-	F(_DECIMAL_128) \
-	F(_COMPLEX) \
-	F(_IMAGINARY) \
-	F(SIGNED) \
-	F(UNSIGNED) \
-	F(CONST) \
-	F(CONSTEXPR) \
-	F(VOLATILE) \
-	F(STATIC) \
-	F(EXTERN) \
-	F(AUTO) \
-	F(REGISTER) \
-	F(RESTRICT) \
-	F(TYPEDEF) \
-	F(TYPEOF) \
-	F(TYPEOF_UNQUAL) \
-	F(STRUCT) \
-	F(UNION) \
-	F(ENUM) \
-	F(_ATOMIC) \
-	F(_GENERIC) \
-	F(_BIT_INT) \
-	F(_THREAD_LOCAL) \
-	F(THREAD_LOCAL) \
-	F(RETURN) \
-	F(_STATIC_ASSERT) \
-	F(STATIC_ASSERT) \
-	F(SIZEOF) \
-	F(_ALIGNAS) \
-	F(ALIGNAS) \
-	F(_ALIGNOF) \
-	F(ALIGNOF) \
-	F(IF) \
-	F(ELSE) \
-	F(SWITCH) \
-	F(CASE) \
-	F(DEFAULT) \
-	F(WHILE) \
-	F(DO) \
-	F(FOR) \
-	F(BREAK) \
-	F(CONTINUE) \
-	F(GOTO) \
-	/* End of keywords */ \
-	F(CONSTANT) \
-	F(OPEN_PARENTHESIS) \
-	F(CLOSE_PARENTHESIS) \
-	F(OPEN_BRACE) \
-	F(CLOSE_BRACE) \
-	F(OPEN_BRACKET) \
-	F(CLOSE_BRACKET) \
-	F(SEMICOLON) \
-	F(PLUS_EQUAL) \
-	F(MINUS_EQUAL) \
-	F(STAR_EQUAL) \
-	F(SLASH_EQUAL) \
-	F(PERCENT_EQUAL) \
-	F(AMPERSAND_EQUAL) \
-	F(BAR_EQUAL) \
-	F(CARET_EQUAL) \
-	F(LEFT_SHIFT_EQUAL) \
-	F(RIGHT_SHIFT_EQUAL) \
-	F(LEFT_SHIFT) \
-	F(RIGHT_SHIFT) \
-	F(PLUS_PLUS) \
-	F(MINUS_MINUS) \
-	F(EQUAL_EQUAL) \
-	F(NOT_EQUAL) \
-	F(LESS_EQUAL) \
-	F(GREATER_EQUAL) \
-	F(AMPERSAND_AMPERSAND) \
-	F(BAR_BAR) \
-	F(PLUS) \
-	F(MINUS) \
-	F(STAR) \
-	F(SLASH) \
-	F(PERCENT) \
-	F(AMPERSAND) \
-	F(BAR) \
-	F(CARET) \
-	F(TILDE) \
-	F(EQUAL) \
-	F(LESS) \
-	F(GREATER) \
-	F(EXCLAMATION) \
-	F(QUESTION) \
-	F(COMMA) \
-	F(DOT) \
-	F(ARROW) \
-	F(COLON) \
-	F(STRING)
-
-#define CYMB_TOKEN_ENUM(name) \
-	CYMB_TOKEN_##name,
-
 /*
  * A token type.
  */
 typedef enum CymbTokenType
 {
-	CYMB_TOKEN(CYMB_TOKEN_ENUM)
+	CYMB_TOKEN_IDENTIFIER,
+	/* Keywords */
+	CYMB_TOKEN_VOID,
+	CYMB_TOKEN__BOOL,
+	CYMB_TOKEN_BOOL,
+	CYMB_TOKEN_FALSE,
+	CYMB_TOKEN_TRUE,
+	CYMB_TOKEN_CHAR,
+	CYMB_TOKEN_SHORT,
+	CYMB_TOKEN_INT,
+	CYMB_TOKEN_LONG,
+	CYMB_TOKEN_FLOAT,
+	CYMB_TOKEN_DOUBLE,
+	CYMB_TOKEN__DECIMAL_32,
+	CYMB_TOKEN__DECIMAL_64,
+	CYMB_TOKEN__DECIMAL_128,
+	CYMB_TOKEN__COMPLEX,
+	CYMB_TOKEN__IMAGINARY,
+	CYMB_TOKEN_SIGNED,
+	CYMB_TOKEN_UNSIGNED,
+	CYMB_TOKEN_CONST,
+	CYMB_TOKEN_CONSTEXPR,
+	CYMB_TOKEN_VOLATILE,
+	CYMB_TOKEN_STATIC,
+	CYMB_TOKEN_EXTERN,
+	CYMB_TOKEN_AUTO,
+	CYMB_TOKEN_REGISTER,
+	CYMB_TOKEN_RESTRICT,
+	CYMB_TOKEN_TYPEDEF,
+	CYMB_TOKEN_TYPEOF,
+	CYMB_TOKEN_TYPEOF_UNQUAL,
+	CYMB_TOKEN_STRUCT,
+	CYMB_TOKEN_UNION,
+	CYMB_TOKEN_ENUM,
+	CYMB_TOKEN__ATOMIC,
+	CYMB_TOKEN__GENERIC,
+	CYMB_TOKEN__BIT_INT,
+	CYMB_TOKEN__THREAD_LOCAL,
+	CYMB_TOKEN_THREAD_LOCAL,
+	CYMB_TOKEN_RETURN,
+	CYMB_TOKEN__STATIC_ASSERT,
+	CYMB_TOKEN_STATIC_ASSERT,
+	CYMB_TOKEN_SIZEOF,
+	CYMB_TOKEN__ALIGNAS,
+	CYMB_TOKEN_ALIGNAS,
+	CYMB_TOKEN__ALIGNOF,
+	CYMB_TOKEN_ALIGNOF,
+	CYMB_TOKEN_IF,
+	CYMB_TOKEN_ELSE,
+	CYMB_TOKEN_SWITCH,
+	CYMB_TOKEN_CASE,
+	CYMB_TOKEN_DEFAULT,
+	CYMB_TOKEN_WHILE,
+	CYMB_TOKEN_DO,
+	CYMB_TOKEN_FOR,
+	CYMB_TOKEN_BREAK,
+	CYMB_TOKEN_CONTINUE,
+	CYMB_TOKEN_GOTO,
+	/* End of keywords */
+	CYMB_TOKEN_CONSTANT,
+	CYMB_TOKEN_OPEN_PARENTHESIS,
+	CYMB_TOKEN_CLOSE_PARENTHESIS,
+	CYMB_TOKEN_OPEN_BRACE,
+	CYMB_TOKEN_CLOSE_BRACE,
+	CYMB_TOKEN_OPEN_BRACKET,
+	CYMB_TOKEN_CLOSE_BRACKET,
+	CYMB_TOKEN_SEMICOLON,
+	CYMB_TOKEN_PLUS_EQUAL,
+	CYMB_TOKEN_MINUS_EQUAL,
+	CYMB_TOKEN_STAR_EQUAL,
+	CYMB_TOKEN_SLASH_EQUAL,
+	CYMB_TOKEN_PERCENT_EQUAL,
+	CYMB_TOKEN_AMPERSAND_EQUAL,
+	CYMB_TOKEN_BAR_EQUAL,
+	CYMB_TOKEN_CARET_EQUAL,
+	CYMB_TOKEN_LEFT_SHIFT_EQUAL,
+	CYMB_TOKEN_RIGHT_SHIFT_EQUAL,
+	CYMB_TOKEN_LEFT_SHIFT,
+	CYMB_TOKEN_RIGHT_SHIFT,
+	CYMB_TOKEN_PLUS_PLUS,
+	CYMB_TOKEN_MINUS_MINUS,
+	CYMB_TOKEN_EQUAL_EQUAL,
+	CYMB_TOKEN_NOT_EQUAL,
+	CYMB_TOKEN_LESS_EQUAL,
+	CYMB_TOKEN_GREATER_EQUAL,
+	CYMB_TOKEN_AMPERSAND_AMPERSAND,
+	CYMB_TOKEN_BAR_BAR,
+	CYMB_TOKEN_PLUS,
+	CYMB_TOKEN_MINUS,
+	CYMB_TOKEN_STAR,
+	CYMB_TOKEN_SLASH,
+	CYMB_TOKEN_PERCENT,
+	CYMB_TOKEN_AMPERSAND,
+	CYMB_TOKEN_BAR,
+	CYMB_TOKEN_CARET,
+	CYMB_TOKEN_TILDE,
+	CYMB_TOKEN_EQUAL,
+	CYMB_TOKEN_LESS,
+	CYMB_TOKEN_GREATER,
+	CYMB_TOKEN_EXCLAMATION,
+	CYMB_TOKEN_QUESTION,
+	CYMB_TOKEN_COMMA,
+	CYMB_TOKEN_DOT,
+	CYMB_TOKEN_ARROW,
+	CYMB_TOKEN_COLON,
+	CYMB_TOKEN_STRING
 } CymbTokenType;
-
-/*
- * Get string representation of a token type.
- *
- * Parameters:
- * - type: A token type.
- *
- * Returns:
- * - A string representation of the token type.
- */
-const char* cymbTokenTypeString(CymbTokenType type);
 
 /*
  * Check if a token is a keyword.
@@ -207,67 +190,62 @@ typedef struct CymbTokenList
 } CymbTokenList;
 
 /*
- * A list of constant tokens.
- *
- * Fields:
- * - tokens: An array of tokens.
- * - count: The number of tokens.
- */
-typedef struct CymbConstTokenList
-{
-	const CymbToken* tokens;
-	size_t count;
-} CymbConstTokenList;
-
-/*
- * A parse result.
- */
-typedef enum CymbParseResult
-{
-	CYMB_PARSE_MATCH,
-	CYMB_PARSE_NO_MATCH,
-	CYMB_PARSE_INVALID,
-} CymbParseResult;
-
-/*
  * A lex function.
  *
  * Parameters:
  * - reader: A reader.
- * - parseResult: The result.
  * - token: A token in which to store the result.
  * - diagnostics: A list of diagnostics.
  *
  * Returns:
- * - CYMB_SUCCESS on success.
+ * - CYMB_SUCCESS on match.
+ * - CYMB_NO_MATCH if there is no match.
+ * - CYMB_INVALID if the token is invalid.
  * - CYMB_OUT_OF_MEMORY if a diagnostic could not be added.
  */
-typedef CymbResult (*CymbLexFunction)(CymbReader* reader, CymbParseResult* parseResult, CymbToken* token, CymbDiagnosticList* diagnostics);
+typedef CymbResult (*CymbLexFunction)(CymbReader* reader, CymbToken* token, CymbDiagnosticList* diagnostics);
 
 /*
  * Parse a string literal.
  */
-CymbResult cymbParseString(CymbReader* reader, CymbParseResult* parseResult, CymbToken* token, CymbDiagnosticList* diagnostics);
+CymbResult cymbParseString(CymbReader* reader, CymbToken* token, CymbDiagnosticList* diagnostics);
 
 /*
  * Parse a character constant.
  */
-CymbResult cymbParseCharacter(CymbReader* reader, CymbParseResult* parseResult, CymbToken* token, CymbDiagnosticList* diagnostics);
+CymbResult cymbParseCharacter(CymbReader* reader, CymbToken* token, CymbDiagnosticList* diagnostics);
 
 /*
- * Parse a token that does not fit in another category (operators, punctuation).
+ * Parse a punctuator.
  */
-CymbResult cymbParseToken(CymbReader* reader, CymbParseResult* parseResult, CymbToken* token, CymbDiagnosticList* diagnostics);
+CymbResult cymbParsePunctuator(CymbReader* reader, CymbToken* token, CymbDiagnosticList* diagnostics);
+
+/*
+ * Parse an unsigned integer.
+ *
+ * Parameters:
+ * - reader: A reader.
+ * - value: The parsed value.
+ * - base: The base.
+ * - diagnostics: A list of diagnostics.
+ *
+ * Returns:
+ * - CYMB_SUCCESS on match.
+ * - CYMB_NO_MATCH if there is no match.
+ * - CYMB_INVALID if the number is invalid.
+ * - CYMB_OUT_OF_MEMORY if a diagnostic could not be added.
+ */
+CymbResult cymbParseUnsigned(CymbReader* reader, uintmax_t* value, unsigned char base, CymbDiagnosticList* diagnostics);
 
 /*
  * Parse an integer constant.
  */
-CymbResult cymbParseConstant(CymbReader* reader, CymbParseResult* parseResult, CymbToken* token, CymbDiagnosticList* diagnostics);
+CymbResult cymbParseConstant(CymbReader* reader, CymbToken* token, CymbDiagnosticList* diagnostics);
 
 /*
  * Parse an identifier or keyword.
  */
-CymbResult cymbParseIdentifier(CymbReader* reader, CymbParseResult* parseResult, CymbToken* token, CymbDiagnosticList* diagnostics);
+CymbResult cymbParseIdentifier(CymbReader* reader, CymbToken* token, CymbDiagnosticList* diagnostics);
 
 /*
  * Lex a string into a list of tokens.
@@ -279,8 +257,8 @@ CymbResult cymbParseIdentifier(CymbReader* reader, CymbParseResult* parseResult,
  *
  * Returns:
  * - CYMB_SUCCESS if the string is successfully lexed.
- * - CYMB_ERROR_OUT_OF_MEMORY if memory allocation fails.
- * - CYMB_ERROR_INVALID_ARGUMENT if some token is invalid.
+ * - CYMB_INVALID if some token is invalid.
+ * - CYMB_OUT_OF_MEMORY if memory allocation fails.
  */
 CymbResult cymbLex(const char* string, CymbTokenList* tokens, CymbDiagnosticList* diagnostics);
 

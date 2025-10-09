@@ -22,6 +22,7 @@ configure_file(include/cymb/version.h.in include/cymb/version.h @ONLY)
 add_library(
 	cymb_lib
 	STATIC
+	source/cymb/assembly.c
 	source/cymb/cymb.c
 	source/cymb/diagnostic.c
 	source/cymb/lex.c
@@ -52,7 +53,15 @@ target_link_libraries(cymb PRIVATE cymb_lib)
 enable_testing()
 
 # Cymb test.
-add_executable(cymb_test test/test.c test/test_lex.c test/test_tree.c)
+add_executable(
+	cymb_test
+	test/test.c
+	test/test_assembly.c
+	test/test_lex.c
+	test/test_tree.c
+)
+
 target_include_directories(cymb_test PRIVATE test)
 target_link_libraries(cymb_test PRIVATE cymb_lib)
+
 add_test(NAME cymb_test COMMAND cymb_test WORKING_DIRECTORY ${CYMB_OUTPUT_DIRECTORY})

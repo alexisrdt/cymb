@@ -21,11 +21,14 @@ typedef enum CymbStandard: long
  * The compiling options.
  *
  * Fields:
- * - input: The path to the file to compile.
+ * - inputs: The path to the files to compile.
+ * - inputCount: The number of files to compile.
  * - output: The path to write the result to.
- * - version: The version of the C standard to use.
+ * - standard: The C standard to use.
  * - tabWidth: Tab width used for diagnostics.
  * - debug: Switch to compile in debug or release mode.
+ * - version: Switch to display the version information.
+ * - help: Switch to display the help information.
  */
 typedef struct CymbOptions
 {
@@ -53,8 +56,8 @@ typedef struct CymbOptions
  *
  * Returns:
  * - CYMB_SUCCESS on success.
- * - CYMB_ERROR_INVALID_ARGUMENT if an invalid argument was passed.
- * - CYMB_ERROR_OUT_OF_MEMORY if out of memory.
+ * - CYMB_INVALID if an invalid argument was passed.
+ * - CYMB_OUT_OF_MEMORY if out of memory.
  */
 CymbResult cymbParseArguments(const CymbConstString* arguments, size_t argumentCount, CymbOptions* options, CymbDiagnosticList* diagnostics);
 

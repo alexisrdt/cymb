@@ -1,7 +1,10 @@
 #include "cymb/lex.h"
 
+#include <inttypes.h>
+#include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "test.h"
@@ -9,9 +12,9 @@
 typedef struct CymbLexTest
 {
 	const char* string;
-	CymbParseResult result;
+	CymbResult result;
 	CymbToken solution;
-	CymbConstDiagnosticList diagnostics;
+	CymbDiagnosticList diagnostics;
 	CymbReader reader;
 } CymbLexTest;
 
@@ -55,55 +58,73 @@ static void cymbCompareTokens(const CymbToken* const first, const CymbToken* con
 	cymbCompareDiagnosticInfo(&first->info, &second->info, context);
 }
 
-void cymbCompareDiagnostics(const CymbConstDiagnosticList* const first, const CymbConstDiagnosticList* const second, CymbTestContext* const context)
+void cymbCompareDiagnostics(const CymbDiagnosticList* const first, const CymbDiagnosticList* const second, CymbTestContext* const context)
 {
-	if(first->count != second->count)
+	cymbContextPush(context, "diagnostic");
+
+	const CymbDiagnostic* firstDiagnostic = first->start;
+	const CymbDiagnostic* secondDiagnostic = second->start;
+
+	size_t diagnosticIndex = 0;
+	while(firstDiagnostic)
 	{
-		cymbFail(context, "Wrong number of diagnostics.");
-		return;
-	}
+		cymbContextSetIndex(context, diagnosticIndex);
 
-	const char* const format = "diagnostic #%zu";
-	char buffer[64];
-	context->strings[context->stringCount] = buffer;
-	++context->stringCount;
+		if(!secondDiagnostic)
+		{
+			cymbFail(context, "Unexpected diagnostic.");
+			goto end;
+		}
 
-	for(size_t diagnosticIndex = 0; diagnosticIndex < first->count; ++diagnosticIndex)
-	{
-		snprintf(buffer, sizeof(buffer), format, diagnosticIndex);
-
-		if(first->diagnostics[diagnosticIndex].type != second->diagnostics[diagnosticIndex].type)
+		if(firstDiagnostic->type != secondDiagnostic->type)
 		{
 			cymbFail(context, "Wrong diagnostic type.");
 		}
 
-		cymbCompareDiagnosticInfo(&first->diagnostics[diagnosticIndex].info, &second->diagnostics[diagnosticIndex].info, context);
+		cymbCompareDiagnosticInfo(&firstDiagnostic->info, &secondDiagnostic->info, context);
+
+		firstDiagnostic = firstDiagnostic->next;
+		secondDiagnostic = secondDiagnostic->next;
+
+		++diagnosticIndex;
 	}
 
-	--context->stringCount;
+	if(secondDiagnostic)
+	{
+		cymbContextSetIndex(context, diagnosticIndex);
+		cymbFail(context, "Missing diagnostic.");
+	}
+
+	end:
+	cymbContextPop(context);
 }
 
 static void cymbDoLexTest(const CymbLexTest* const test, const CymbLexFunction testFunction, CymbTestContext* const context)
 {
-	context->diagnostics.count = 0;
+	const CymbArenaSave save = cymbArenaSave(&context->arena);
 
 	CymbReader reader;
 	cymbReaderCreate(test->string, context->diagnostics.tabWidth, &reader);
 
-	CymbParseResult parseResult;
-	CymbToken token;
+	CymbToken token = {
+		.info = {
+			.position = reader.position,
+			.line = reader.line,
+			.hint.string = reader.string
+		}
+	};
 
-	const CymbResult result = testFunction(&reader, &parseResult, &token, &context->diagnostics);
-	if(result != CYMB_SUCCESS)
+	const CymbResult result = testFunction(&reader, &token, &context->diagnostics);
+
+	if(result != test->result)
 	{
 		cymbFail(context, "Wrong result.");
-		return;
+		goto end;
 	}
 
-	if(parseResult != test->result)
+	if(result != CYMB_SUCCESS && result != CYMB_NO_MATCH && result != CYMB_INVALID)
 	{
-		cymbFail(context, "Wrong parse result.");
-		return;
+		goto end;
 	}
 
 	if(reader.string != test->reader.string)
@@ -119,47 +140,45 @@ static void cymbDoLexTest(const CymbLexTest* const test, const CymbLexFunction t
 		cymbFail(context, "Wrong reader line.");
 	}
 
-	if(parseResult == CYMB_PARSE_NO_MATCH)
+	if(result == CYMB_NO_MATCH)
 	{
-		return;
+		goto end;
 	}
 
 	cymbCompareTokens(&token, &test->solution, context);
-	cymbCompareDiagnostics(&(const CymbConstDiagnosticList){
-		.diagnostics = context->diagnostics.diagnostics,
-		.count = context->diagnostics.count
-	}, &test->diagnostics, context);
+	cymbCompareDiagnostics(&context->diagnostics, &test->diagnostics, context);
+
+	end:
+	cymbArenaRestore(&context->arena, save);
+	cymbDiagnosticListFree(&context->diagnostics);
 }
 
 static void cymbTestStrings(CymbTestContext* const context)
 {
-	const char* const format = "%s #%zu";
-	char buffer[32];
-	context->strings[context->stringCount] = buffer;
-	++context->stringCount;
+	cymbContextPush(context, __func__);
 
-	const CymbLexTest tests[] = {
-		{.string = "", .result = CYMB_PARSE_NO_MATCH, .reader = {
+	CymbLexTest tests[] = {
+		{.string = "", .result = CYMB_NO_MATCH, .reader = {
 			.string = tests[0].string,
 			.position = {1, 1},
 			.line = {tests[0].string, 0}
 		}},
-		{.string = "abc", .result = CYMB_PARSE_NO_MATCH, .reader = {
+		{.string = "abc", .result = CYMB_NO_MATCH, .reader = {
 			.string = tests[1].string,
 			.position = {1, 1},
 			.line = {tests[1].string, 3}
 		}},
-		{.string = "123", .result = CYMB_PARSE_NO_MATCH, .reader = {
+		{.string = "123", .result = CYMB_NO_MATCH, .reader = {
 			.string = tests[2].string,
 			.position = {1, 1},
 			.line = {tests[2].string, 3}
 		}},
-		{.string = "+=", .result = CYMB_PARSE_NO_MATCH, .reader = {
+		{.string = "+=", .result = CYMB_NO_MATCH, .reader = {
 			.string = tests[3].string,
 			.position = {1, 1},
 			.line = {tests[3].string, 2}
 		}},
-		{.string = "\"string\"", .result = CYMB_PARSE_MATCH, .solution = {
+		{.string = "\"string\"", .result = CYMB_SUCCESS, .solution = {
 			.type = CYMB_TOKEN_STRING,
 			.info = {
 				.position = {1, 1},
@@ -171,85 +190,107 @@ static void cymbTestStrings(CymbTestContext* const context)
 			.position = {1, 9},
 			.line = {tests[4].string, 8}
 		}},
-		{.string = "\"st\x01ri\nng\"", .result = CYMB_PARSE_INVALID, .solution = {
+		{.string = "\"st\x01ri\nng\"", .result = CYMB_INVALID, .solution = {
 			.type = CYMB_TOKEN_STRING,
 			.info = {
 				.position = {1, 1},
 				.line = {tests[5].string, 6},
 				.hint = {tests[5].string, 6}
 			}
-		}, .diagnostics = {
-			.count = 2,
-			.diagnostics = (const CymbDiagnostic[]){
-				{
-					.type = CYMB_INVALID_STRING_CHARACTER,
-					.info = {
-						.position = {1, 4},
-						.line = {tests[5].string, 6},
-						.hint = {tests[5].string + 3, 1}
-					}
-				},
-				{
-					.type = CYMB_UNFINISHED_STRING,
-					.info = {
-						.position = {1, 1},
-						.line = {tests[5].string, 6},
-						.hint = {tests[5].string, 6}
-					}
-				}
-			}
-		}, .reader = {
+		}, .diagnostics = {}, .reader = {
 			.string = tests[5].string + 6,
 			.position = {1, 7},
 			.line = {tests[5].string, 6}
+		}},
+		{.string = "\"string\\\"", .result = CYMB_INVALID, .solution = {
+			.type = CYMB_TOKEN_STRING,
+			.info = {
+				.position = {1, 1},
+				.line = {tests[6].string, 9},
+				.hint = {tests[6].string, 9}
+			}
+		}, .diagnostics = {}, .reader = {
+			.string = tests[6].string + 9,
+			.position = {1, 10},
+			.line = {tests[6].string, 9}
 		}}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
 
+	CymbDiagnostic diagnostics5[] = {
+		{
+			.type = CYMB_INVALID_STRING_CHARACTER,
+			.info = {
+				.position = {1, 4},
+				.line = {tests[5].string, 6},
+				.hint = {tests[5].string + 3, 1}
+			},
+			.next = diagnostics5 + 1
+		},
+		{
+			.type = CYMB_UNFINISHED_STRING,
+			.info = {
+				.position = {1, 1},
+				.line = {tests[5].string, 6},
+				.hint = {tests[5].string, 6}
+			}
+		}
+	};
+	tests[5].diagnostics.start = diagnostics5;
+
+	CymbDiagnostic diagnostics6[] = {
+		{
+			.type = CYMB_UNFINISHED_STRING,
+			.info = {
+				.position = {1, 1},
+				.line = {tests[6].string, 9},
+				.hint = {tests[6].string, 9}
+			}
+		}
+	};
+	tests[6].diagnostics.start = diagnostics6;
+
 	for(size_t testIndex = 0; testIndex < testCount; ++testIndex)
 	{
-		snprintf(buffer, sizeof(buffer), format, __func__, testIndex);
+		cymbContextSetIndex(context, testIndex);
 
 		cymbDoLexTest(&tests[testIndex], cymbParseString, context);
 	}
 
-	--context->stringCount;
+	cymbContextPop(context);
 }
 
 static void cymbTestCharacters(CymbTestContext* const context)
 {
-	const char* const format = "%s #%zu";
-	char buffer[32];
-	context->strings[context->stringCount] = buffer;
-	++context->stringCount;
+	cymbContextPush(context, __func__);
 
-	const CymbLexTest tests[] = {
-		{.string = "", .result = CYMB_PARSE_NO_MATCH, .reader = {
+	CymbLexTest tests[] = {
+		{.string = "", .result = CYMB_NO_MATCH, .reader = {
 			.string = tests[0].string,
 			.position = {1, 1},
 			.line = {tests[0].string, 0}
 		}},
-		{.string = "abc", .result = CYMB_PARSE_NO_MATCH, .reader = {
+		{.string = "abc", .result = CYMB_NO_MATCH, .reader = {
 			.string = tests[1].string,
 			.position = {1, 1},
 			.line = {tests[1].string, 3}
 		}},
-		{.string = "123", .result = CYMB_PARSE_NO_MATCH, .reader = {
+		{.string = "123", .result = CYMB_NO_MATCH, .reader = {
 			.string = tests[2].string,
 			.position = {1, 1},
 			.line = {tests[2].string, 3}
 		}},
-		{.string = "+=", .result = CYMB_PARSE_NO_MATCH, .reader = {
+		{.string = "+=", .result = CYMB_NO_MATCH, .reader = {
 			.string = tests[3].string,
 			.position = {1, 1},
 			.line = {tests[3].string, 2}
 		}},
-		{.string = "\"string\"", .result = CYMB_PARSE_NO_MATCH, .reader = {
+		{.string = "\"string\"", .result = CYMB_NO_MATCH, .reader = {
 			.string = tests[4].string,
 			.position = {1, 1},
 			.line = {tests[4].string, 8}
 		}},
-		{.string = "'c'", .result = CYMB_PARSE_MATCH, .solution = {
+		{.string = "'c'", .result = CYMB_SUCCESS, .solution = {
 			.type = CYMB_TOKEN_CONSTANT,
 			.constant = {
 				.type = CYMB_CONSTANT_INT,
@@ -265,7 +306,7 @@ static void cymbTestCharacters(CymbTestContext* const context)
 			.position = {1, 4},
 			.line = {tests[5].string, 3}
 		}},
-		{.string = "'a\n'", .result = CYMB_PARSE_INVALID, .solution = {
+		{.string = "'a\n'", .result = CYMB_INVALID, .solution = {
 			.type = CYMB_TOKEN_CONSTANT,
 			.constant = {
 				.type = CYMB_CONSTANT_INT,
@@ -276,19 +317,7 @@ static void cymbTestCharacters(CymbTestContext* const context)
 				.line = {tests[6].string, 2},
 				.hint = {tests[6].string, 2}
 			}
-		}, .diagnostics = {
-			.count = 1,
-			.diagnostics = (const CymbDiagnostic[]){
-				{
-					.type = CYMB_INVALID_CHARACTER_CONSTANT,
-					.info = {
-						.position = {1, 1},
-						.line = {tests[6].string, 2},
-						.hint = {tests[6].string, 2}
-					}
-				}
-			}
-		}, .reader = {
+		}, .diagnostics = {}, .reader = {
 			.string = tests[6].string + 2,
 			.position = {1, 3},
 			.line = {tests[6].string, 2}
@@ -296,30 +325,39 @@ static void cymbTestCharacters(CymbTestContext* const context)
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
 
+	CymbDiagnostic diagnostics6[] = {
+		{
+			.type = CYMB_INVALID_CHARACTER_CONSTANT,
+			.info = {
+				.position = {1, 1},
+				.line = {tests[6].string, 2},
+				.hint = {tests[6].string, 2}
+			}
+		}
+	};
+	tests[6].diagnostics.start = diagnostics6;
+
 	for(size_t testIndex = 0; testIndex < testCount; ++testIndex)
 	{
-		snprintf(buffer, sizeof(buffer), format, __func__, testIndex);
+		cymbContextSetIndex(context, testIndex);
 
 		cymbDoLexTest(&tests[testIndex], cymbParseCharacter, context);
 	}
 
-	--context->stringCount;
+	cymbContextPop(context);
 }
 
-static void cymbTestTokens(CymbTestContext* const context)
+static void cymbTestPunctuators(CymbTestContext* const context)
 {
-	const char* const format = "%s #%zu";
-	char buffer[32];
-	context->strings[context->stringCount] = buffer;
-	++context->stringCount;
+	cymbContextPush(context, __func__);
 
 	const CymbLexTest tests[] = {
-		{.string = "", .result = CYMB_PARSE_NO_MATCH, .reader = {
+		{.string = "", .result = CYMB_NO_MATCH, .reader = {
 			.string = tests[0].string,
 			.position = {1, 1},
 			.line = {tests[0].string, 0}
 		}},
-		{.string = "+=", .result = CYMB_PARSE_MATCH, .solution = {
+		{.string = "+=", .result = CYMB_SUCCESS, .solution = {
 			.type = CYMB_TOKEN_PLUS_EQUAL,
 			.info = {
 				.position = {1, 1},
@@ -331,7 +369,7 @@ static void cymbTestTokens(CymbTestContext* const context)
 			.position = {1, 3},
 			.line = {tests[1].string, 2}
 		}},
-		{.string = "+++", .result = CYMB_PARSE_MATCH, .solution = {
+		{.string = "+++", .result = CYMB_SUCCESS, .solution = {
 			.type = CYMB_TOKEN_PLUS_PLUS,
 			.info = {
 				.position = {1, 1},
@@ -343,7 +381,7 @@ static void cymbTestTokens(CymbTestContext* const context)
 			.position = {1, 3},
 			.line = {tests[2].string, 3}
 		}},
-		{.string = "+-", .result = CYMB_PARSE_MATCH, .solution = {
+		{.string = "+-", .result = CYMB_SUCCESS, .solution = {
 			.type = CYMB_TOKEN_PLUS,
 			.info = {
 				.position = {1, 1},
@@ -355,7 +393,7 @@ static void cymbTestTokens(CymbTestContext* const context)
 			.position = {1, 2},
 			.line = {tests[3].string, 2}
 		}},
-		{.string = "[{()}]", .result = CYMB_PARSE_MATCH, .solution = {
+		{.string = "[{()}]", .result = CYMB_SUCCESS, .solution = {
 			.type = CYMB_TOKEN_OPEN_BRACKET,
 			.info = {
 				.position = {1, 1},
@@ -367,22 +405,22 @@ static void cymbTestTokens(CymbTestContext* const context)
 			.position = {1, 2},
 			.line = {tests[4].string, 6}
 		}},
-		{.string = "abc", .result = CYMB_PARSE_NO_MATCH, .reader = {
+		{.string = "abc", .result = CYMB_NO_MATCH, .reader = {
 			.string = tests[5].string,
 			.position = {1, 1},
 			.line = {tests[5].string, 3}
 		}},
-		{.string = "123", .result = CYMB_PARSE_NO_MATCH, .reader = {
+		{.string = "123", .result = CYMB_NO_MATCH, .reader = {
 			.string = tests[6].string,
 			.position = {1, 1},
 			.line = {tests[6].string, 3}
 		}},
-		{.string = "\"string\"", .result = CYMB_PARSE_NO_MATCH, .reader = {
+		{.string = "\"string\"", .result = CYMB_NO_MATCH, .reader = {
 			.string = tests[7].string,
 			.position = {1, 1},
 			.line = {tests[7].string, 8}
 		}},
-		{.string = "'c'", .result = CYMB_PARSE_NO_MATCH, .reader = {
+		{.string = "'c'", .result = CYMB_NO_MATCH, .reader = {
 			.string = tests[8].string,
 			.position = {1, 1},
 			.line = {tests[8].string, 3}
@@ -392,38 +430,35 @@ static void cymbTestTokens(CymbTestContext* const context)
 
 	for(size_t testIndex = 0; testIndex < testCount; ++testIndex)
 	{
-		snprintf(buffer, sizeof(buffer), format, __func__, testIndex);
+		cymbContextSetIndex(context, testIndex);
 
-		cymbDoLexTest(&tests[testIndex], cymbParseToken, context);
+		cymbDoLexTest(&tests[testIndex], cymbParsePunctuator, context);
 	}
 
-	--context->stringCount;
+	cymbContextPop(context);
 }
 
 static void cymbTestConstants(CymbTestContext* const context)
 {
-	const char* const format = "%s #%zu";
-	char buffer[32];
-	context->strings[context->stringCount] = buffer;
-	++context->stringCount;
+	cymbContextPush(context, __func__);
 
-	const CymbLexTest tests[] = {
-		{.string = "", .result = CYMB_PARSE_NO_MATCH, .reader = {
+	CymbLexTest tests[] = {
+		{.string = "", .result = CYMB_NO_MATCH, .reader = {
 			.string = tests[0].string,
 			.position = {1, 1},
 			.line = {tests[0].string, 0}
 		}},
-		{.string = "abc", .result = CYMB_PARSE_NO_MATCH, .reader = {
+		{.string = "abc", .result = CYMB_NO_MATCH, .reader = {
 			.string = tests[1].string,
 			.position = {1, 1},
 			.line = {tests[1].string, 3}
 		}},
-		{.string = "[]", .result = CYMB_PARSE_NO_MATCH, .reader = {
+		{.string = "[]", .result = CYMB_NO_MATCH, .reader = {
 			.string = tests[2].string,
 			.position = {1, 1},
 			.line = {tests[2].string, 2}
 		}},
-		{.string = "57", .result = CYMB_PARSE_MATCH, .solution = {
+		{.string = "57", .result = CYMB_SUCCESS, .solution = {
 			.type = CYMB_TOKEN_CONSTANT,
 			.constant = {.type = CYMB_CONSTANT_INT, .value = 57},
 			.info = {
@@ -436,7 +471,7 @@ static void cymbTestConstants(CymbTestContext* const context)
 			.position = {1, 3},
 			.line = {tests[3].string, 2}
 		}},
-		{.string = "57llu", .result = CYMB_PARSE_MATCH, .solution = {
+		{.string = "57llu", .result = CYMB_SUCCESS, .solution = {
 			.type = CYMB_TOKEN_CONSTANT,
 			.constant = {.type = CYMB_CONSTANT_UNSIGNED_LONG_LONG, .value = 57},
 			.info = {
@@ -449,7 +484,7 @@ static void cymbTestConstants(CymbTestContext* const context)
 			.position = {1, 6},
 			.line = {tests[4].string, 5}
 		}},
-		{.string = "0x42L", .result = CYMB_PARSE_MATCH, .solution = {
+		{.string = "0x42L", .result = CYMB_SUCCESS, .solution = {
 			.type = CYMB_TOKEN_CONSTANT,
 			.constant = {.type = CYMB_CONSTANT_LONG, .value = 0x42},
 			.info = {
@@ -462,7 +497,7 @@ static void cymbTestConstants(CymbTestContext* const context)
 			.position = {1, 6},
 			.line = {tests[5].string, 5}
 		}},
-		{.string = "0 a", .result = CYMB_PARSE_MATCH, .solution = {
+		{.string = "0 a", .result = CYMB_SUCCESS, .solution = {
 			.type = CYMB_TOKEN_CONSTANT,
 			.constant = {.type = CYMB_CONSTANT_INT, .value = 0},
 			.info = {
@@ -475,12 +510,12 @@ static void cymbTestConstants(CymbTestContext* const context)
 			.position = {1, 2},
 			.line = {tests[6].string, 3}
 		}},
-		{.string = " 1", .result = CYMB_PARSE_NO_MATCH, .reader = {
+		{.string = " 1", .result = CYMB_NO_MATCH, .reader = {
 			.string = tests[7].string,
 			.position = {1, 1},
 			.line = {tests[7].string, 2}
 		}},
-		{.string = "0xyz", .result = CYMB_PARSE_INVALID, .solution = {
+		{.string = "0xyz", .result = CYMB_INVALID, .solution = {
 			.type = CYMB_TOKEN_CONSTANT,
 			.constant = {.type = CYMB_CONSTANT_INT, .value = 0},
 			.info = {
@@ -488,24 +523,12 @@ static void cymbTestConstants(CymbTestContext* const context)
 				.line = {tests[8].string, 4},
 				.hint = {tests[8].string, 4}
 			}
-		}, .diagnostics = {
-			.count = 1,
-			.diagnostics = (const CymbDiagnostic[]){
-				{
-					.type = CYMB_INVALID_CONSTANT_SUFFIX,
-					.info = {
-						.position = {1, 2},
-						.line = {tests[8].string, 4},
-						.hint = {tests[8].string + 1, 3}
-					}
-				}
-			}
-		}, .reader = {
+		}, .diagnostics = {}, .reader = {
 			.string = tests[8].string + 4,
 			.position = {1, 5},
 			.line = {tests[8].string, 4}
 		}},
-		{.string = "0'1'23'4", .result = CYMB_PARSE_MATCH, .solution = {
+		{.string = "0'1'23'4", .result = CYMB_SUCCESS, .solution = {
 			.type = CYMB_TOKEN_CONSTANT,
 			.constant = {.type = CYMB_CONSTANT_INT, .value = 01234},
 			.info = {
@@ -518,7 +541,7 @@ static void cymbTestConstants(CymbTestContext* const context)
 			.position = {1, 9},
 			.line = {tests[9].string, 8}
 		}},
-		{.string = "0x'12''3'''4'\n", .result = CYMB_PARSE_INVALID, .solution = {
+		{.string = "0x'12''3'''4'\n", .result = CYMB_INVALID, .solution = {
 			.type = CYMB_TOKEN_CONSTANT,
 			.constant = {.type = CYMB_CONSTANT_INT, .value = 0x1234},
 			.info = {
@@ -526,56 +549,12 @@ static void cymbTestConstants(CymbTestContext* const context)
 				.line = {tests[10].string, 13},
 				.hint = {tests[10].string, 13}
 			}
-		}, .diagnostics = {
-			.count = 5,
-			.diagnostics = (const CymbDiagnostic[]){
-				{
-					.type = CYMB_SEPARATOR_AFTER_BASE,
-					.info = {
-						.position = {1, 3},
-						.line = {tests[10].string, 13},
-						.hint = {tests[10].string + 2, 1}
-					}
-				},
-				{
-					.type = CYMB_DUPLICATE_SEPARATOR,
-					.info = {
-						.position = {1, 7},
-						.line = {tests[10].string, 13},
-						.hint = {tests[10].string + 6, 1}
-					}
-				},
-				{
-					.type = CYMB_DUPLICATE_SEPARATOR,
-					.info = {
-						.position = {1, 10},
-						.line = {tests[10].string, 13},
-						.hint = {tests[10].string + 9, 1}
-					}
-				},
-				{
-					.type = CYMB_DUPLICATE_SEPARATOR,
-					.info = {
-						.position = {1, 11},
-						.line = {tests[10].string, 13},
-						.hint = {tests[10].string + 10, 1}
-					}
-				},
-				{
-					.type = CYMB_TRAILING_SEPARATOR,
-					.info = {
-						.position = {1, 13},
-						.line = {tests[10].string, 13},
-						.hint = {tests[10].string + 12, 1}
-					}
-				}
-			}
-		}, .reader = {
+		}, .diagnostics = {}, .reader = {
 			.string = tests[10].string + 13,
 			.position = {1, 14},
 			.line = {tests[10].string, 13}
 		}},
-		{.string = "0b'''101'''lu", .result = CYMB_PARSE_INVALID, .solution = {
+		{.string = "0b'''101'''lu", .result = CYMB_INVALID, .solution = {
 			.type = CYMB_TOKEN_CONSTANT,
 			.constant = {.type = CYMB_CONSTANT_UNSIGNED_LONG, .value = 0b101},
 			.info = {
@@ -583,64 +562,12 @@ static void cymbTestConstants(CymbTestContext* const context)
 				.line = {tests[11].string, 13},
 				.hint = {tests[11].string, 13}
 			}
-		}, .diagnostics = {
-			.count = 6,
-			.diagnostics = (const CymbDiagnostic[]){
-				{
-					.type = CYMB_SEPARATOR_AFTER_BASE,
-					.info = {
-						.position = {1, 3},
-						.line = {tests[11].string, 13},
-						.hint = {tests[11].string + 2, 1}
-					}
-				},
-				{
-					.type = CYMB_DUPLICATE_SEPARATOR,
-					.info = {
-						.position = {1, 4},
-						.line = {tests[11].string, 13},
-						.hint = {tests[11].string + 3, 1}
-					}
-				},
-				{
-					.type = CYMB_DUPLICATE_SEPARATOR,
-					.info = {
-						.position = {1, 5},
-						.line = {tests[11].string, 13},
-						.hint = {tests[11].string + 4, 1}
-					}
-				},
-				{
-					.type = CYMB_DUPLICATE_SEPARATOR,
-					.info = {
-						.position = {1, 10},
-						.line = {tests[11].string, 13},
-						.hint = {tests[11].string + 9, 1}
-					}
-				},
-				{
-					.type = CYMB_DUPLICATE_SEPARATOR,
-					.info = {
-						.position = {1, 11},
-						.line = {tests[11].string, 13},
-						.hint = {tests[11].string + 10, 1}
-					}
-				},
-				{
-					.type = CYMB_TRAILING_SEPARATOR,
-					.info = {
-						.position = {1, 11},
-						.line = {tests[11].string, 13},
-						.hint = {tests[11].string + 10, 1}
-					}
-				}
-			}
-		}, .reader = {
+		}, .diagnostics = {}, .reader = {
 			.string = tests[11].string + 13,
 			.position = {1, 14},
 			.line = {tests[11].string, 13}
 		}},
-		{.string = "0b''", .result = CYMB_PARSE_INVALID, .solution = {
+		{.string = "0b''", .result = CYMB_INVALID, .solution = {
 			.type = CYMB_TOKEN_CONSTANT,
 			.constant = {.type = CYMB_CONSTANT_INT, .value = 0},
 			.info = {
@@ -648,50 +575,204 @@ static void cymbTestConstants(CymbTestContext* const context)
 				.line = {tests[12].string, 4},
 				.hint = {tests[12].string, 2}
 			}
-		}, .diagnostics = {
-			.count = 1,
-			.diagnostics = (const CymbDiagnostic[]){
-				{
-					.type = CYMB_INVALID_CONSTANT_SUFFIX,
-					.info = {
-						.position = {1, 2},
-						.line = {tests[12].string, 4},
-						.hint = {tests[12].string + 1, 1}
-					}
-				}
-			}
-		}, .reader = {
+		}, .diagnostics = {}, .reader = {
 			.string = tests[12].string + 2,
 			.position = {1, 3},
 			.line = {tests[12].string, 4}
+		}},
+		{.string = "'1'", .result = CYMB_NO_MATCH, .reader = {
+			.string = tests[13].string,
+			.position = {1, 1},
+			.line = {tests[13].string, 3}
+		}},
+		{.result = CYMB_INVALID, .solution = {
+			.type = CYMB_TOKEN_CONSTANT,
+			.constant = {CYMB_CONSTANT_INT, 0}
+		}},
+		{.string = "011", .result = CYMB_SUCCESS, .solution = {
+			.type = CYMB_TOKEN_CONSTANT,
+			.constant = {.type = CYMB_CONSTANT_INT, .value = 9},
+			.info = {
+				.position = {1, 1},
+				.line = {tests[15].string, 3},
+				.hint = {tests[15].string, 3}
+			}
+		}, .reader = {
+			.string = tests[15].string + 3,
+			.position = {1, 4},
+			.line = {tests[15].string, 3}
 		}}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
 
+	CymbDiagnostic diagnostics8[] = {
+		{
+			.type = CYMB_INVALID_CONSTANT_SUFFIX,
+			.info = {
+				.position = {1, 2},
+				.line = {tests[8].string, 4},
+				.hint = {tests[8].string + 1, 3}
+			}
+		}
+	};
+	tests[8].diagnostics.start = diagnostics8;
+
+	CymbDiagnostic diagnostics10[] = {
+		{
+			.type = CYMB_SEPARATOR_AFTER_BASE,
+			.info = {
+				.position = {1, 3},
+				.line = {tests[10].string, 13},
+				.hint = {tests[10].string + 2, 1}
+			},
+			.next = diagnostics10 + 1
+		},
+		{
+			.type = CYMB_DUPLICATE_SEPARATORS,
+			.info = {
+				.position = {1, 6},
+				.line = {tests[10].string, 13},
+				.hint = {tests[10].string + 5, 2}
+			},
+			.next = diagnostics10 + 2
+		},
+		{
+			.type = CYMB_DUPLICATE_SEPARATORS,
+			.info = {
+				.position = {1, 9},
+				.line = {tests[10].string, 13},
+				.hint = {tests[10].string + 8, 3}
+			},
+			.next = diagnostics10 + 3
+		},
+		{
+			.type = CYMB_TRAILING_SEPARATOR,
+			.info = {
+				.position = {1, 13},
+				.line = {tests[10].string, 13},
+				.hint = {tests[10].string + 12, 1}
+			}
+		}
+	};
+	tests[10].diagnostics.start = diagnostics10;
+	
+	CymbDiagnostic diagnostics11[] = {
+		{
+			.type = CYMB_SEPARATOR_AFTER_BASE,
+			.info = {
+				.position = {1, 3},
+				.line = {tests[11].string, 13},
+				.hint = {tests[11].string + 2, 1}
+			},
+			.next = diagnostics11 + 1
+		},
+		{
+			.type = CYMB_DUPLICATE_SEPARATORS,
+			.info = {
+				.position = {1, 3},
+				.line = {tests[11].string, 13},
+				.hint = {tests[11].string + 2, 3}
+			},
+			.next = diagnostics11 + 2
+		},
+		{
+			.type = CYMB_DUPLICATE_SEPARATORS,
+			.info = {
+				.position = {1, 9},
+				.line = {tests[11].string, 13},
+				.hint = {tests[11].string + 8, 3}
+			},
+			.next = diagnostics11 + 3
+		},
+		{
+			.type = CYMB_TRAILING_SEPARATOR,
+			.info = {
+				.position = {1, 11},
+				.line = {tests[11].string, 13},
+				.hint = {tests[11].string + 10, 1}
+			}
+		}
+	};
+	tests[11].diagnostics.start = diagnostics11;
+
+	CymbDiagnostic diagnostics12[] = {
+		{
+			.type = CYMB_INVALID_CONSTANT_SUFFIX,
+			.info = {
+				.position = {1, 2},
+				.line = {tests[12].string, 4},
+				.hint = {tests[12].string + 1, 1}
+			}
+		}
+	};
+	tests[12].diagnostics.start = diagnostics12;
+
+	const char* const format14 = "%"PRIuMAX"%"PRIuMAX;
+	const int length14 = snprintf(nullptr, 0, format14, UINTMAX_MAX, UINTMAX_MAX);
+	if(length14 <= 0 || length14 >= INT_MAX)
+	{
+		context->passed = false;
+		goto end;
+	}
+	char* const string14 = malloc(length14 + 1);
+	if(!string14)
+	{
+		context->passed = false;
+		goto end;
+	}
+	if(snprintf(string14, length14 + 1, format14, UINTMAX_MAX, UINTMAX_MAX) != length14)
+	{
+		context->passed = false;
+		goto clear;
+	}
+	tests[14].string = string14;
+	tests[14].solution.info = (CymbDiagnosticInfo){
+		.position = {1, 1},
+		.line = {string14, length14},
+		.hint = {string14, length14}
+	};
+	tests[14].reader = (CymbReader){
+		.string = string14 + length14,
+		.position = {1, length14 + 1},
+		.line = {string14, length14}
+	};
+	CymbDiagnostic diagnostics14[] = {
+		{
+			.type = CYMB_CONSTANT_TOO_LARGE,
+			.info = {
+				.position = {1, 1},
+				.line = tests[14].reader.line,
+				.hint = {tests[14].string, length14}
+			}
+		}
+	};
+	tests[14].diagnostics.start = diagnostics14;
+
 	for(size_t testIndex = 0; testIndex < testCount; ++testIndex)
 	{
-		snprintf(buffer, sizeof(buffer), format, __func__, testIndex);
+		cymbContextSetIndex(context, testIndex);
 
 		cymbDoLexTest(&tests[testIndex], cymbParseConstant, context);
 	}
 
-	--context->stringCount;
+	clear:
+	free(string14);
+
+	end:
+	cymbContextPop(context);
 }
 
 static void cymbTestIdentifiers(CymbTestContext* const context)
 {
-	const char* const format = "%s #%zu";
-	char buffer[32];
-	context->strings[context->stringCount] = buffer;
-	++context->stringCount;
+	cymbContextPush(context, __func__);
 
 	const CymbLexTest tests[] = {
-		{.string = "", .result = CYMB_PARSE_NO_MATCH, .reader = {
+		{.string = "", .result = CYMB_NO_MATCH, .reader = {
 			.string = tests[0].string,
 			.position = {1, 1},
 			.line = {tests[0].string, 0}
 		}},
-		{.string = "int", .result = CYMB_PARSE_MATCH, .solution = {
+		{.string = "int", .result = CYMB_SUCCESS, .solution = {
 			.type = CYMB_TOKEN_INT,
 			.info = {
 				.position = {1, 1},
@@ -703,7 +784,7 @@ static void cymbTestIdentifiers(CymbTestContext* const context)
 			.position = {1, 4},
 			.line = {tests[1].string, 3}
 		}},
-		{.string = "int5a", .result = CYMB_PARSE_MATCH, .solution = {
+		{.string = "int5a", .result = CYMB_SUCCESS, .solution = {
 			.type = CYMB_TOKEN_IDENTIFIER,
 			.info = {
 				.position = {1, 1},
@@ -715,7 +796,7 @@ static void cymbTestIdentifiers(CymbTestContext* const context)
 			.position = {1, 6},
 			.line = {tests[2].string, 5}
 		}},
-		{.string = "int_t", .result = CYMB_PARSE_MATCH, .solution = {
+		{.string = "int_t", .result = CYMB_SUCCESS, .solution = {
 			.type = CYMB_TOKEN_IDENTIFIER,
 			.info = {
 				.position = {1, 1},
@@ -727,17 +808,17 @@ static void cymbTestIdentifiers(CymbTestContext* const context)
 			.position = {1, 6},
 			.line = {tests[3].string, 5}
 		}},
-		{.string = " int", .result = CYMB_PARSE_NO_MATCH, .reader = {
+		{.string = " int", .result = CYMB_NO_MATCH, .reader = {
 			.string = tests[4].string,
 			.position = {1, 1},
 			.line = {tests[4].string, 4}
 		}},
-		{.string = "7a84de", .result = CYMB_PARSE_NO_MATCH, .reader = {
+		{.string = "7a84de", .result = CYMB_NO_MATCH, .reader = {
 			.string = tests[5].string,
 			.position = {1, 1},
 			.line = {tests[5].string, 6}
 		}},
-		{.string = "_my_var_", .result = CYMB_PARSE_MATCH, .solution = {
+		{.string = "_my_var_", .result = CYMB_SUCCESS, .solution = {
 			.type = CYMB_TOKEN_IDENTIFIER,
 			.info = {
 				.position = {1, 1},
@@ -749,12 +830,12 @@ static void cymbTestIdentifiers(CymbTestContext* const context)
 			.position = {1, 9},
 			.line = {tests[6].string, 8}
 		}},
-		{.string = "[float]", .result = CYMB_PARSE_NO_MATCH, .reader = {
+		{.string = "[float]", .result = CYMB_NO_MATCH, .reader = {
 			.string = tests[7].string,
 			.position = {1, 1},
 			.line = {tests[7].string, 7}
 		}},
-		{.string = "fl;oat", .result = CYMB_PARSE_MATCH, .solution = {
+		{.string = "fl;oat", .result = CYMB_SUCCESS, .solution = {
 			.type = CYMB_TOKEN_IDENTIFIER,
 			.info = {
 				.position = {1, 1},
@@ -766,7 +847,7 @@ static void cymbTestIdentifiers(CymbTestContext* const context)
 			.position = {1, 3},
 			.line = {tests[8].string, 6}
 		}},
-		{.string = "float{}", .result = CYMB_PARSE_MATCH, .solution = {
+		{.string = "float{}", .result = CYMB_SUCCESS, .solution = {
 			.type = CYMB_TOKEN_FLOAT,
 			.info = {
 				.position = {1, 1},
@@ -778,7 +859,7 @@ static void cymbTestIdentifiers(CymbTestContext* const context)
 			.position = {1, 6},
 			.line = {tests[9].string, 7}
 		}},
-		{.string = "do int", .result = CYMB_PARSE_MATCH, .solution = {
+		{.string = "do int", .result = CYMB_SUCCESS, .solution = {
 			.type = CYMB_TOKEN_DO,
 			.info = {
 				.position = {1, 1},
@@ -790,7 +871,7 @@ static void cymbTestIdentifiers(CymbTestContext* const context)
 			.position = {1, 3},
 			.line = {tests[10].string, 6}
 		}},
-		{.string = "double", .result = CYMB_PARSE_MATCH, .solution = {
+		{.string = "double", .result = CYMB_SUCCESS, .solution = {
 			.type = CYMB_TOKEN_DOUBLE,
 			.info = {
 				.position = {1, 1},
@@ -807,34 +888,31 @@ static void cymbTestIdentifiers(CymbTestContext* const context)
 
 	for(size_t testIndex = 0; testIndex < testCount; ++testIndex)
 	{
-		snprintf(buffer, sizeof(buffer), format, __func__, testIndex);
+		cymbContextSetIndex(context, testIndex);
 
 		cymbDoLexTest(&tests[testIndex], cymbParseIdentifier, context);
 	}
 
-	--context->stringCount;
+	cymbContextPop(context);
 }
 
 static void cymbTestLex(CymbTestContext* const context)
 {
-	const char* const format = "%s #%zu";
-	char buffer[32];
-	context->strings[context->stringCount] = buffer;
-	++context->stringCount;
+	cymbContextPush(context, __func__);
 
-	const struct
+	struct
 	{
 		const char* string;
-		CymbConstTokenList tokens;
+		CymbTokenList tokens;
 		bool valid;
-		CymbConstDiagnosticList diagnostics;
+		CymbDiagnosticList diagnostics;
 	} tests[] = {
 		{.string = "", .tokens = {
 			.tokens = nullptr,
 			.count = 0
 		}, .valid = true},
 		{.string = "a + b", .tokens = {
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_IDENTIFIER,
 					.info = {
@@ -863,7 +941,7 @@ static void cymbTestLex(CymbTestContext* const context)
 			.count = 3
 		}, .valid = true},
 		{.string = "i-*=p[\"s\"'c'5ul/x", .tokens = {
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_IDENTIFIER,
 					.info = {
@@ -950,7 +1028,7 @@ static void cymbTestLex(CymbTestContext* const context)
 			.count = 10
 		}, .valid = true},
 		{.string = "int a = 0xyz;", .tokens = {
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_INT,
 					.info = {
@@ -994,74 +1072,72 @@ static void cymbTestLex(CymbTestContext* const context)
 				}
 			},
 			.count = 5
-		}, .valid = false, .diagnostics = {
-			.count = 1,
-			.diagnostics = (const CymbDiagnostic[]){
-				{
-					.type = CYMB_INVALID_CONSTANT_SUFFIX,
-					.info = {
-						.position = {1, 10},
-						.line = {tests[3].string, 13},
-						.hint = {tests[3].string + 9, 3}
-					}
-				}
-			}
-		}}
+		}, .valid = false, .diagnostics = {}}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
 
+	CymbDiagnostic diagnostics3[] = {
+		{
+			.type = CYMB_INVALID_CONSTANT_SUFFIX,
+			.info = {
+				.position = {1, 10},
+				.line = {tests[3].string, 13},
+				.hint = {tests[3].string + 9, 3}
+			}
+		}
+	};
+	tests[3].diagnostics.start = diagnostics3;
+
+	const CymbArenaSave save = cymbArenaSave(&context->arena);
+
 	for(size_t testIndex = 0; testIndex < testCount; ++testIndex)
 	{
-		context->diagnostics.count = 0;
-
-		snprintf(buffer, sizeof(buffer), format, __func__, testIndex);
+		cymbContextSetIndex(context, testIndex);
 
 		CymbTokenList tokens;
 		const CymbResult result = cymbLex(tests[testIndex].string, &tokens, &context->diagnostics);
 
-		if((tests[testIndex].valid && result != CYMB_SUCCESS) || (!tests[testIndex].valid && result != CYMB_ERROR_INVALID_ARGUMENT))
+		if((tests[testIndex].valid && result != CYMB_SUCCESS) || (!tests[testIndex].valid && result != CYMB_INVALID))
 		{
 			cymbFail(context, "Wrong result.");
-			continue;
+			goto next;
 		}
 
-		cymbCompareDiagnostics(&(const CymbConstDiagnosticList){
-			.diagnostics = context->diagnostics.diagnostics,
-			.count = context->diagnostics.count
-		}, &tests[testIndex].diagnostics, context);
+		cymbCompareDiagnostics(&context->diagnostics, &tests[testIndex].diagnostics, context);
 
 		if(tokens.count != tests[testIndex].tokens.count)
 		{
 			cymbFail(context, "Wrong token count.");
 			free(tokens.tokens);
-			continue;
+			goto next;
 		}
 
-		const char* const tokenFormat = "token #%zu";
-		char tokenBuffer[32];
-		context->strings[context->stringCount] = tokenBuffer;
-		++context->stringCount;
+		cymbContextPush(context, "token");
 
 		for(size_t tokenIndex = 0; tokenIndex < tokens.count; ++tokenIndex)
 		{
-			snprintf(tokenBuffer, sizeof(tokenBuffer), tokenFormat, tokenIndex);
+			cymbContextSetIndex(context, tokenIndex);
 
 			cymbCompareTokens(&tokens.tokens[tokenIndex], &tests[testIndex].tokens.tokens[tokenIndex], context);
 		}
 		
-		--context->stringCount;
+		cymbContextPop(context);
 
-		free(tokens.tokens);
+		cymbFreeTokenList(&tokens);
+
+		next:
+		cymbArenaRestore(&context->arena, save);
+		cymbDiagnosticListFree(&context->diagnostics);
 	}
 
-	--context->stringCount;
+	cymbContextPop(context);
 }
 
 void cymbTestLexs(CymbTestContext* const context)
 {
 	cymbTestStrings(context);
 	cymbTestCharacters(context);
-	cymbTestTokens(context);
+	cymbTestPunctuators(context);
 	cymbTestConstants(context);
 	cymbTestIdentifiers(context);
 	cymbTestLex(context);

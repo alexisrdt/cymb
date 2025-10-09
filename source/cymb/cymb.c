@@ -2,33 +2,32 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 /*
  * Read all the contents of a file in text mode.
  *
  * Parameters:
  * - path: Path of the file.
- * - string: A pointer to a string where to store the contents of the file.
+ * - string: A string where to store the contents of the file.
  *
  * Returns:
  * - CYMB_SUCCESS on success.
- * - CYMB_ERROR_FILE_NOT_FOUND if the file could not be opened.
- * - CYMB_ERROR_OUT_OF_MEMORY if the file is too large.
- * - CYMB_ERROR_UNKNOWN otherwise.
+ * - CYMB_FILE_NOT_FOUND if the file could not be opened.
+ * - CYMB_OUT_OF_MEMORY otherwise.
  */
 static CymbResult cymbReadFile(const char* const path, CymbString* const string)
 {
-	string->string = nullptr;
-	string->length = 0;
-
 	CymbResult result = CYMB_SUCCESS;
+
+	*string = (CymbString){};
 
 	// Open file.
 	FILE* const file = fopen(path, "r");
 	if(!file)
 	{
-		result = CYMB_ERROR_FILE_NOT_FOUND;
-		goto error;
+		result = CYMB_FILE_NOT_FOUND;
+		goto end;
 	}
 
 	// Allocate initial buffer.
@@ -36,46 +35,46 @@ static CymbResult cymbReadFile(const char* const path, CymbString* const string)
 	string->string = malloc(capacity);
 	if(!string->string)
 	{
-		result = CYMB_ERROR_OUT_OF_MEMORY;
 		goto error;
 	}
 
 	size_t toRead = capacity;
 	while(true)
 	{
-		const size_t read = fread(string->string + string->length, sizeof(string->string[0]), toRead, file);
+		const size_t read = fread(string->string + string->length, 1, toRead, file);
 		string->length += read;
 
 		if(read < toRead)
 		{
 			if(!feof(file))
 			{
-				result = CYMB_ERROR_UNKNOWN;
 				goto error;
 			}
 
 			if(string->length >= cymbSizeMax)
 			{
-				result = CYMB_ERROR_OUT_OF_MEMORY;
 				goto error;
 			}
 
 			char* const newString = realloc(string->string, string->length + 1);
 			if(!newString)
 			{
-				result = CYMB_ERROR_OUT_OF_MEMORY;
 				goto error;
 			}
 			string->string = newString;
 			string->string[string->length] = '\0';
 
-			result = fclose(file) == 0 ? CYMB_SUCCESS : CYMB_ERROR_UNKNOWN;
+			if(fclose(file) != 0)
+			{
+				result = CYMB_OUT_OF_MEMORY;
+				goto clear;
+			}
+			
 			goto end;
 		}
 
-		if(capacity >= cymbSizeMax)
+		if(capacity == cymbSizeMax)
 		{
-			result = CYMB_ERROR_OUT_OF_MEMORY;
 			goto error;
 		}
 
@@ -86,14 +85,18 @@ static CymbResult cymbReadFile(const char* const path, CymbString* const string)
 		char* const newString = realloc(string->string, capacity);
 		if(!newString)
 		{
-			result = CYMB_ERROR_OUT_OF_MEMORY;
 			goto error;
 		}
 		string->string = newString;
 	}
 
 	error:
+	result = CYMB_OUT_OF_MEMORY;
+	fclose(file);
+
+	clear:
 	free(string->string);
+	*string = (CymbString){};
 
 	end:
 	return result;
@@ -103,15 +106,15 @@ static CymbResult cymbReadFile(const char* const path, CymbString* const string)
  * Compile a source file.
  *
  * Parameters:
- * - options: A pointer to the options to use for compilation.
+ * - arena: An arena to use for allocations.
+ * - diagnostics: A list of diagnostics.
  *
  * Returns:
  * - CYMB_SUCCESS on success.
- * - CYMB_ERROR_FILE_NOT_FOUND if the file could not be opened.
- * - CYMB_ERROR_OUT_OF_MEMORY if the code is too large.
- * - CYMB_ERROR_UNKNOWN otherwise.
+ * - CYMB_FILE_NOT_FOUND if the file could not be opened.
+ * - CYMB_OUT_OF_MEMORY if the code is too large.
  */
-static CymbResult cymbCompile(CymbDiagnosticList* const diagnostics)
+static CymbResult cymbCompile(CymbArena* const arena, CymbDiagnosticList* const diagnostics)
 {
 	CymbResult result;
 
@@ -122,17 +125,16 @@ static CymbResult cymbCompile(CymbDiagnosticList* const diagnostics)
 	{
 		switch(result)
 		{
-			case CYMB_ERROR_FILE_NOT_FOUND:
+			case CYMB_FILE_NOT_FOUND:
 				fprintf(stderr, "Failed to open file \"%s\".\n", diagnostics->file);
 				break;
 
-			case CYMB_ERROR_OUT_OF_MEMORY:
+			case CYMB_OUT_OF_MEMORY:
 				fputs("Out of memory.\n", stderr);
 				break;
 
 			default:
-				fputs("Unknown error ocymbured.\n", stderr);
-				break;
+				unreachable();
 		}
 
 		goto end;
@@ -140,34 +142,23 @@ static CymbResult cymbCompile(CymbDiagnosticList* const diagnostics)
 
 	CymbTokenList tokens;
 	result = cymbLex(source.string, &tokens, diagnostics);
-	if(result != CYMB_SUCCESS && result != CYMB_ERROR_INVALID_ARGUMENT)
+	if(result != CYMB_SUCCESS && result != CYMB_INVALID)
 	{
 		goto clear;
 	}
 
 	CymbTree tree;
-	const CymbResult parseResult = cymbParse(&(const CymbConstTokenList){
-		.tokens = tokens.tokens,
-		.count = tokens.count
-	}, &tree, diagnostics);
-	if(parseResult == CYMB_SUCCESS)
-	{
-		cymbFreeTree(&tree);
-	}
-	else
+	const CymbResult parseResult = cymbParse(&tokens, arena, &tree, diagnostics);
+	if(parseResult != CYMB_SUCCESS)
 	{
 		result = parseResult;
 	}
-
-	clear:
+	
+	cymbFreeTree(&tree);
 	cymbFreeTokenList(&tokens);
 
-	cymbDiagnosticListPrint(&(const CymbConstDiagnosticList){
-		.file = diagnostics->file,
-		.tabWidth = diagnostics->tabWidth,
-		.diagnostics = diagnostics->diagnostics,
-		.count = diagnostics->count
-	});
+	clear:
+	cymbDiagnosticListPrint(diagnostics);
 
 	free(source.string);
 
@@ -177,27 +168,28 @@ static CymbResult cymbCompile(CymbDiagnosticList* const diagnostics)
 
 CymbResult cymbMain(const CymbConstString* const arguments, const size_t argumentCount)
 {
-	CymbResult result = CYMB_SUCCESS;
-
-	// Parse command line arguments.
-	CymbDiagnosticList diagnostics;
-	result = cymbDiagnosticListCreate(&diagnostics, nullptr, 4);
+	CymbArena arena;
+	CymbResult result = cymbArenaCreate(&arena);
 	if(result != CYMB_SUCCESS)
 	{
 		goto end;
 	}
 
+	CymbDiagnosticList diagnostics;
+	cymbDiagnosticListCreate(&diagnostics, &arena, nullptr, 8);
+	if(result != CYMB_SUCCESS)
+	{
+		goto end;
+	}
+
+	// Parse arguments.
 	CymbOptions options;
 	result = cymbParseArguments(arguments, argumentCount, &options, &diagnostics);
-	
-	cymbDiagnosticListPrint(&(const CymbConstDiagnosticList){
-		.diagnostics = diagnostics.diagnostics,
-		.file = diagnostics.file,
-		.tabWidth = diagnostics.tabWidth,
-		.count = diagnostics.count
-	});
+	diagnostics.tabWidth = options.tabWidth;
 
-	if(options.help)
+	cymbDiagnosticListPrint(&diagnostics);
+
+	if(options.help || (options.inputCount == 0 && !options.version))
 	{
 		cymbPrintHelp();
 	}
@@ -206,29 +198,219 @@ CymbResult cymbMain(const CymbConstString* const arguments, const size_t argumen
 		cymbPrintVersion();
 	}
 	
-	if(result == CYMB_ERROR_OUT_OF_MEMORY)
+	if(result != CYMB_SUCCESS || options.help || options.version)
 	{
-		goto end;
+		goto clear;
 	}
 	
 	// Compile file.
-	if(!options.help && !options.version)
+	for(size_t inputIndex = 0; inputIndex < options.inputCount; ++inputIndex)
 	{
-		for(size_t inputIndex = 0; inputIndex < options.inputCount; ++inputIndex)
-		{
-			diagnostics.count = 0;
-			diagnostics.file = options.inputs[inputIndex];
+		cymbArenaClear(&arena);
+		cymbDiagnosticListFree(&diagnostics);
 
-			result = cymbCompile(&diagnostics);
-			if(result == CYMB_ERROR_OUT_OF_MEMORY)
+		diagnostics.file = options.inputs[inputIndex];
+
+		CymbResult fileResult = CYMB_SUCCESS;
+
+		const size_t length = strlen(options.inputs[inputIndex]);
+		if(length >= 2 && options.inputs[inputIndex][length - 2] == '.' && options.inputs[inputIndex][length - 1] == 's')
+		{
+			CymbString string;
+			fileResult = cymbReadFile(options.inputs[inputIndex], &string);
+			if(fileResult != CYMB_SUCCESS)
 			{
-				break;
+				switch(result)
+				{
+					case CYMB_FILE_NOT_FOUND:
+						fprintf(stderr, "Failed to open file \"%s\".\n", diagnostics.file);
+						break;
+
+					case CYMB_OUT_OF_MEMORY:
+						fputs("Out of memory.\n", stderr);
+						break;
+
+					default:
+						unreachable();
+				}
+
+				goto next;
 			}
+
+			uint32_t* codes;
+			size_t count;
+			fileResult = cymbAssemble(string.string, &codes, &count, &diagnostics);
+
+			cymbDiagnosticListPrint(&diagnostics);
+			free(string.string);
+
+			if(fileResult != CYMB_SUCCESS)
+			{
+				goto next;
+			}
+
+			if(length > cymbSizeMax - 3)
+			{
+				fileResult = CYMB_OUT_OF_MEMORY;
+
+				free(codes);
+
+				goto next;
+			}
+
+			const size_t outputLength = length + 2;
+			char* const output = malloc(outputLength + 1);
+			if(!output)
+			{
+				fileResult = CYMB_OUT_OF_MEMORY;
+
+				free(codes);
+
+				goto next;
+			}
+
+			strncpy(output, options.inputs[inputIndex], length - 1);
+			output[length - 1] = 'b';
+			output[length] = 'i';
+			output[length + 1] = 'n';
+			output[length + 2] = '\0';
+
+			FILE* const file = fopen(output, "w");
+			if(!file)
+			{
+				fileResult = CYMB_FILE_NOT_FOUND;
+
+				fprintf(stderr, "Failed to open file \"%s\".\n", output);
+
+				free(output);
+				free(codes);
+
+				goto next;
+			}
+
+			if(fwrite(codes, sizeof(codes[0]), count, file) != count)
+			{
+				fclose(file);
+				free(output);
+				free(codes);
+
+				goto next;
+			}
+
+			if(fclose(file) != 0)
+			{
+				fileResult = CYMB_OUT_OF_MEMORY;
+			}
+
+			free(output);
+			free(codes);
+
+			goto next;
+		}
+
+		if(
+			length >= 4 &&
+			options.inputs[inputIndex][length - 4] == '.' &&
+			options.inputs[inputIndex][length - 3] == 'b' &&
+			options.inputs[inputIndex][length - 2] == 'i' &&
+			options.inputs[inputIndex][length - 1] == 'n'
+		)
+		{
+			FILE* const file = fopen(options.inputs[inputIndex], "rb");
+			if(!file)
+			{
+				fileResult = CYMB_FILE_NOT_FOUND;
+				fprintf(stderr, "Failed to open file \"%s\".\n", diagnostics.file);
+				goto next;
+			}
+
+			if(fseek(file, 0, SEEK_END) != 0)
+			{
+				fclose(file);
+				fileResult = CYMB_INVALID;
+				goto next;
+			}
+
+			const long size = ftell(file);
+			if(size <= 0 || size % 4 != 0)
+			{
+				fclose(file);
+				fileResult = CYMB_INVALID;
+				goto next;
+			}
+			if((unsigned long)size > cymbSizeMax)
+			{
+				fclose(file);
+				fileResult = CYMB_OUT_OF_MEMORY;
+				goto next;
+			}
+
+			rewind(file);
+
+			const size_t count = size / 4;
+			uint32_t* const codes = malloc(size);
+			if(!codes)
+			{
+				fclose(file);
+				fileResult = CYMB_INVALID;
+				goto next;
+			}
+
+			if(fread(codes, 4, count, file) != count)
+			{
+				fclose(file);
+				free(codes);
+				fileResult = CYMB_INVALID;
+				goto next;
+			}
+
+			if(fclose(file) != 0)
+			{
+				free(codes);
+				fileResult = CYMB_INVALID;
+				goto next;
+			}
+
+			CymbString assembly;
+			fileResult = cymbDisassemble(codes, count, &assembly, &diagnostics);
+
+			free(codes);
+
+			cymbDiagnosticListPrint(&diagnostics);
+
+			if(fileResult != CYMB_SUCCESS)
+			{
+				free(assembly.string);
+				goto next;
+			}
+
+			fputs(assembly.string, stdout);
+			free(assembly.string);
+
+			goto next;
+		}
+
+		fileResult = cymbCompile(&arena, &diagnostics);
+
+		next:
+		if(
+			(fileResult == CYMB_OUT_OF_MEMORY) ||
+			((result == CYMB_SUCCESS || result == CYMB_FILE_NOT_FOUND) && fileResult == CYMB_INVALID) ||
+			(result == CYMB_SUCCESS && fileResult == CYMB_FILE_NOT_FOUND)
+		)
+		{
+			result = fileResult;
+		}
+
+		if(result == CYMB_OUT_OF_MEMORY)
+		{
+			break;
 		}
 	}
 
-	CYMB_FREE(options.inputs);
-	cymbDiagnosticListFree(&diagnostics);
+	clear:
+	free(options.inputs);
+	cymbArenaFree(&arena);
 
 	end:
 	return result;

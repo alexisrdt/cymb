@@ -1,6 +1,7 @@
 #ifndef CYMB_CYMB_H
 #define CYMB_CYMB_H
 
+#include "cymb/assembly.h"
 #include "cymb/diagnostic.h"
 #include "cymb/lex.h"
 #include "cymb/memory.h"
@@ -19,8 +20,8 @@
  *
  * Returns:
  * - CYMB_SUCCESS on success.
- * - CYMB_ERROR_OUT_OF_MEMORY if out of memory.
- * - CYMB_ERROR_INVALID_ARGUMENT if an argument is invalid or a file could not be compiled.
+ * - CYMB_INVALID if an argument is invalid or a file could not be compiled.
+ * - CYMB_OUT_OF_MEMORY if out of memory.
  */
 CymbResult cymbMain(const CymbConstString* arguments, size_t argumentCount);
 

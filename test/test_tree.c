@@ -6,307 +6,325 @@
 
 typedef struct CymbTreeTest
 {
-	CymbConstTokenList tokens;
-	CymbParseResult result;
-	CymbTreeBuilder solution;
-	CymbConstDiagnosticList diagnostics;
+	CymbTokenList tokens;
+	CymbResult result;
+	CymbTree solution;
+	CymbDiagnosticList diagnostics;
 	size_t endTokensOffset;
 } CymbTreeTest;
 
-static bool cymbComparePointers(const void* const first, const void* const firstRef, const void* const second, const void* const secondRef)
+static void cymbCompareNodes(const CymbNode* const first, const CymbNode* const second, CymbTestContext* const context, size_t* const nodeCount)
 {
-	return (!first && !second) || (first && second && (const char*)first - (const char*)firstRef == (const char*)second - (const char*)secondRef);
+	++*nodeCount;
+	cymbContextSetIndex(context, *nodeCount);
+
+	if(!first && !second)
+	{
+		return;
+	}
+
+	if(!first || !second)
+	{
+		cymbFail(context, "Node is null.");
+		return;
+	}
+
+
+	if(first->type != second->type)
+	{
+		cymbFail(context, "Wrong node type.");
+		return;
+	}
+
+	cymbCompareDiagnosticInfo(&first->info, &second->info, context);
+
+	switch(first->type)
+	{
+		case CYMB_NODE_CONSTANT:
+		{
+			if(first->constantNode.type != second->constantNode.type || first->constantNode.value != second->constantNode.value)
+			{
+				cymbFail(context, "Wrong constant.");
+			}
+			break;
+		}
+
+		case CYMB_NODE_IDENTIFIER:
+		{
+			break;
+		}
+
+		case CYMB_NODE_UNARY_OPERATOR:
+		{
+			if(first->unaryOperatorNode.operator != second->unaryOperatorNode.operator)
+			{
+				cymbFail(context, "Wrong unary operator type.");
+			}
+			cymbCompareNodes(first->unaryOperatorNode.node, second->unaryOperatorNode.node, context, nodeCount);
+			break;
+		}
+
+		case CYMB_NODE_BINARY_OPERATOR:
+		{
+			if(first->binaryOperatorNode.operator != second->binaryOperatorNode.operator)
+			{
+				cymbFail(context, "Wrong binary operator type.");
+			}
+			cymbCompareNodes(first->binaryOperatorNode.leftNode, second->binaryOperatorNode.leftNode, context, nodeCount);
+			cymbCompareNodes(first->binaryOperatorNode.rightNode, second->binaryOperatorNode.rightNode, context, nodeCount);
+			break;
+		}
+
+		case CYMB_NODE_WHILE:
+		{
+			cymbCompareNodes(first->whileNode.expression, second->whileNode.expression, context, nodeCount);
+
+			const CymbNodeChild* firstChild = first->whileNode.body;
+			const CymbNodeChild* secondChild = second->whileNode.body;
+
+			while(firstChild)
+			{
+				if(!secondChild)
+				{
+					cymbFail(context, "Unexpected child node.");
+					return;
+				}
+
+				cymbCompareNodes(firstChild->node, secondChild->node, context, nodeCount);
+
+				firstChild = firstChild->next;
+				secondChild = secondChild->next;
+			}
+
+			if(secondChild)
+			{
+				cymbFail(context, "Missing child node.");
+			}
+
+			break;
+		}
+
+		case CYMB_NODE_RETURN:
+		{
+			cymbCompareNodes(first->returnNode, second->returnNode, context, nodeCount);
+			break;
+		}
+
+		case CYMB_NODE_TYPE:
+		{
+			if(first->typeNode.type != second->typeNode.type)
+			{
+				cymbFail(context, "Wrong type type.");
+			}
+			if(first->typeNode.isConst != second->typeNode.isConst)
+			{
+				cymbFail(context, "Wrong type const.");
+			}
+			if(first->typeNode.isStatic != second->typeNode.isStatic)
+			{
+				cymbFail(context, "Wrong type static.");
+			}
+			break;
+		}
+
+		case CYMB_NODE_POINTER:
+		{
+			cymbCompareNodes(first->pointerNode.pointedNode, second->pointerNode.pointedNode, context, nodeCount);
+			if(first->pointerNode.isConst != second->pointerNode.isConst)
+			{
+				cymbFail(context, "Wrong pointer const.");
+			}
+			if(first->pointerNode.isRestrict != second->pointerNode.isRestrict)
+			{
+				cymbFail(context, "Wrong pointer restrict.");
+			}
+			break;
+		}
+
+		case CYMB_NODE_FUNCTION_TYPE:
+		{
+			cymbCompareNodes(first->functionTypeNode.returnType, second->functionTypeNode.returnType, context, nodeCount);
+
+			const CymbNodeChild* firstChild = first->functionTypeNode.parameterTypes;
+			const CymbNodeChild* secondChild = second->functionTypeNode.parameterTypes;
+
+			while(firstChild)
+			{
+				if(!secondChild)
+				{
+					cymbFail(context, "Unexpected child node.");
+					return;
+				}
+
+				cymbCompareNodes(firstChild->node, secondChild->node, context, nodeCount);
+
+				firstChild = firstChild->next;
+				secondChild = secondChild->next;
+			}
+
+			if(secondChild)
+			{
+				cymbFail(context, "Missing child node.");
+			}
+
+			break;
+		}
+
+		case CYMB_NODE_DECLARATION:
+		{
+			cymbCompareNodes(first->declarationNode.identifier, second->declarationNode.identifier, context, nodeCount);
+			cymbCompareNodes(first->declarationNode.type, second->declarationNode.type, context, nodeCount);
+			cymbCompareNodes(first->declarationNode.initializer, second->declarationNode.initializer, context, nodeCount);
+			break;
+		}
+
+		case CYMB_NODE_FUNCTION:
+		{
+			cymbCompareNodes(first->functionNode.name, second->functionNode.name, context, nodeCount);
+			cymbCompareNodes(first->functionNode.type, second->functionNode.type, context, nodeCount);
+
+			const CymbNodeChild* firstChild = first->functionNode.parameters;
+			const CymbNodeChild* secondChild = second->functionNode.parameters;
+
+			while(firstChild)
+			{
+				if(!secondChild)
+				{
+					cymbFail(context, "Unexpected child node.");
+					return;
+				}
+
+				cymbCompareNodes(firstChild->node, secondChild->node, context, nodeCount);
+
+				firstChild = firstChild->next;
+				secondChild = secondChild->next;
+			}
+
+			if(secondChild)
+			{
+				cymbFail(context, "Missing child node.");
+			}
+
+			firstChild = first->functionNode.statements;
+			secondChild = second->functionNode.statements;
+
+			while(firstChild)
+			{
+				if(!secondChild)
+				{
+					cymbFail(context, "Unexpected child node.");
+					return;
+				}
+
+				cymbCompareNodes(firstChild->node, secondChild->node, context, nodeCount);
+
+				firstChild = firstChild->next;
+				secondChild = secondChild->next;
+			}
+
+			if(secondChild)
+			{
+				cymbFail(context, "Missing child node.");
+			}
+
+			break;
+		}
+
+		case CYMB_NODE_PROGRAM:
+		{
+			const CymbNodeChild* firstChild = first->programNode.children;
+			const CymbNodeChild* secondChild = second->programNode.children;
+
+			while(firstChild)
+			{
+				if(!secondChild)
+				{
+					cymbFail(context, "Unexpected child node.");
+					return;
+				}
+
+				cymbCompareNodes(firstChild->node, secondChild->node, context, nodeCount);
+
+				firstChild = firstChild->next;
+				secondChild = secondChild->next;
+			}
+
+			if(secondChild)
+			{
+				cymbFail(context, "Missing child node.");
+			}
+
+			break;
+		}
+
+		default:
+		{
+			cymbFail(context, "Unknown node type.");
+			break;
+		}
+	}
 }
 
-static void cymbCompareTrees(const CymbTreeBuilder* const first, const CymbTreeBuilder* const second, CymbTestContext* const context)
+static void cymbCompareTrees(const CymbTree* const first, const CymbTree* const second, CymbTestContext* const context)
 {
-	if(first->tree->count != second->tree->count)
-	{
-		cymbFail(context, "Wrong node count.");
-		return;
-	}
+	cymbContextPush(context, "node");
 
-	if(first->childCount != second->childCount)
-	{
-		cymbFail(context, "Wrong child count.");
-		return;
-	}
+	size_t nodeCount = 0;
+	cymbCompareNodes(first->root, second->root, context, &nodeCount);
 
-	if(first->lastStored != first->childrenCapacity || second->lastStored != second->childrenCapacity)
-	{
-		cymbFail(context, "Wrong last stored.");
-	}
-
-	const char* const format = "%s #%zu";
-	char buffer[32];
-	context->strings[context->stringCount] = buffer;
-	++context->stringCount;
-
-	for(size_t childIndex = 0; childIndex < first->childCount; ++childIndex)
-	{
-		snprintf(buffer, sizeof(buffer), format, "child", childIndex);
-
-		if(!cymbComparePointers(first->tree->children[childIndex], first->tree->nodes, second->tree->children[childIndex], second->tree->nodes))
-		{
-			cymbFail(context, "Wrong child.");
-		}
-	}
-
-	for(size_t nodeIndex = 0; nodeIndex < first->tree->count; ++nodeIndex)
-	{
-		snprintf(buffer, sizeof(buffer), format, "node", nodeIndex);
-
-		CymbNode* const firstNode = &first->tree->nodes[nodeIndex];
-		CymbNode* const secondNode = &second->tree->nodes[nodeIndex];
-
-		if(firstNode->type != secondNode->type)
-		{
-			cymbFail(context, "Wrong node type.");
-			continue;
-		}
-
-		cymbCompareDiagnosticInfo(&firstNode->info, &secondNode->info, context);
-
-		switch(firstNode->type)
-		{
-			case CYMB_NODE_CONSTANT:
-				if(firstNode->constantNode.type != secondNode->constantNode.type || firstNode->constantNode.value != secondNode->constantNode.value)
-				{
-					cymbFail(context, "Wrong constant.");
-				}
-				break;
-
-			case CYMB_NODE_IDENTIFIER:
-				break;
-
-			case CYMB_NODE_UNARY_OPERATOR:
-				if(firstNode->unaryOperatorNode.operator != secondNode->unaryOperatorNode.operator)
-				{
-					cymbFail(context, "Wrong unary operator type.");
-				}
-				if(!cymbComparePointers(firstNode->unaryOperatorNode.node, first->tree->nodes, secondNode->unaryOperatorNode.node, second->tree->nodes))
-				{
-					cymbFail(context, "Wrong unary operator node.");
-				}
-				break;
-
-			case CYMB_NODE_BINARY_OPERATOR:
-				if(firstNode->binaryOperatorNode.operator != secondNode->binaryOperatorNode.operator)
-				{
-					cymbFail(context, "Wrong binary operator type.");
-				}
-				if(!cymbComparePointers(firstNode->binaryOperatorNode.leftNode, first->tree->nodes, secondNode->binaryOperatorNode.leftNode, second->tree->nodes))
-				{
-					cymbFail(context, "Wrong binary operator left node.");
-				}
-				if(!cymbComparePointers(firstNode->binaryOperatorNode.rightNode, first->tree->nodes, secondNode->binaryOperatorNode.rightNode, second->tree->nodes))
-				{
-					cymbFail(context, "Wrong binary operator right node.");
-				}
-				break;
-
-			case CYMB_NODE_WHILE:
-				if(!cymbComparePointers(firstNode->whileNode.expression, first->tree->nodes, secondNode->whileNode.expression, second->tree->nodes))
-				{
-					cymbFail(context, "Wrong expression node.");
-				}
-				if(firstNode->whileNode.body.count != secondNode->whileNode.body.count)
-				{
-					cymbFail(context, "Wrong body statement count.");
-				}
-				if(!cymbComparePointers(firstNode->whileNode.body.nodes, first->tree->children, secondNode->whileNode.body.nodes, second->tree->children))
-				{
-					cymbFail(context, "Wrong body statement pointer.");
-				}
-				break;
-
-			case CYMB_NODE_RETURN:
-				if(!cymbComparePointers(firstNode->returnNode, first->tree->nodes, secondNode->returnNode, second->tree->nodes))
-				{
-					cymbFail(context, "Wrong return node.");
-				}
-				break;
-
-			case CYMB_NODE_TYPE:
-				if(firstNode->typeNode.type != secondNode->typeNode.type)
-				{
-					cymbFail(context, "Wrong type type.");
-				}
-				if(firstNode->typeNode.isConst != secondNode->typeNode.isConst)
-				{
-					cymbFail(context, "Wrong type const.");
-				}
-				if(firstNode->typeNode.isStatic != secondNode->typeNode.isStatic)
-				{
-					cymbFail(context, "Wrong type static.");
-				}
-				break;
-
-			case CYMB_NODE_POINTER:
-				if(!cymbComparePointers(firstNode->pointerNode.pointedNode, first->tree->nodes, secondNode->pointerNode.pointedNode, second->tree->nodes))
-				{
-					cymbFail(context, "Wrong pointer pointed node.");
-				}
-				if(firstNode->pointerNode.isConst != secondNode->pointerNode.isConst)
-				{
-					cymbFail(context, "Wrong pointer const.");
-				}
-				if(firstNode->pointerNode.isRestrict != secondNode->pointerNode.isRestrict)
-				{
-					cymbFail(context, "Wrong pointer restrict.");
-				}
-				break;
-
-			case CYMB_NODE_FUNCTION_TYPE:
-				if(!cymbComparePointers(firstNode->functionTypeNode.returnType, first->tree->nodes, secondNode->functionTypeNode.returnType, second->tree->nodes))
-				{
-					cymbFail(context, "Wrong function type return node.");
-				}
-				if(firstNode->functionTypeNode.parameterTypes.count != secondNode->functionTypeNode.parameterTypes.count)
-				{
-					cymbFail(context, "Wrong function type parameter count.");
-				}
-				if(!cymbComparePointers(firstNode->functionTypeNode.parameterTypes.nodes, first->tree->children, secondNode->functionTypeNode.parameterTypes.nodes, second->tree->children))
-				{
-					cymbFail(context, "Wrong function type parameter pointer.");
-				}
-				break;
-
-			case CYMB_NODE_DECLARATION:
-				if(!cymbComparePointers(firstNode->declarationNode.identifier, first->tree->nodes, secondNode->declarationNode.identifier, second->tree->nodes))
-				{
-					cymbFail(context, "Wrong declaration identifier.");
-				}
-				if(!cymbComparePointers(firstNode->declarationNode.type, first->tree->nodes, secondNode->declarationNode.type, second->tree->nodes))
-				{
-					cymbFail(context, "Wrong declaration type.");
-				}
-				if(!cymbComparePointers(firstNode->declarationNode.initializer, first->tree->nodes, secondNode->declarationNode.initializer, second->tree->nodes))
-				{
-					cymbFail(context, "Wrong declaration initializer.");
-				}
-				break;
-
-			case CYMB_NODE_FUNCTION:
-				if(!cymbComparePointers(firstNode->functionNode.name, first->tree->nodes, secondNode->functionNode.name, second->tree->nodes))
-				{
-					cymbFail(context, "Wrong function name.");
-				}
-				if(!cymbComparePointers(firstNode->functionNode.type, first->tree->nodes, secondNode->functionNode.type, second->tree->nodes))
-				{
-					cymbFail(context, "Wrong function type.");
-				}
-				if(firstNode->functionNode.parameters.count != secondNode->functionNode.parameters.count)
-				{
-					cymbFail(context, "Wrong function parameter count.");
-				}
-				if(!cymbComparePointers(firstNode->functionNode.parameters.nodes, first->tree->children, secondNode->functionNode.parameters.nodes, second->tree->children))
-				{
-					cymbFail(context, "Wrong function parameters pointer.");
-				}
-				if(firstNode->functionNode.statements.count != secondNode->functionNode.statements.count)
-				{
-					cymbFail(context, "Wrong function statement count.");
-				}
-				if(!cymbComparePointers(firstNode->functionNode.statements.nodes, first->tree->children, secondNode->functionNode.statements.nodes, second->tree->children))
-				{
-					cymbFail(context, "Wrong function statements pointer.");
-				}
-				break;
-
-			case CYMB_NODE_PROGRAM:
-				if(firstNode->programNode.children.count != secondNode->programNode.children.count)
-				{
-					cymbFail(context, "Wrong program child count.");
-				}
-				if(!cymbComparePointers(firstNode->programNode.children.nodes, first->tree->children, secondNode->programNode.children.nodes, second->tree->children))
-				{
-					cymbFail(context, "Wrong program children pointer.");
-				}
-				break;
-
-			default:
-				cymbFail(context, "Unknown node type.");
-				break;
-		}
-	}
-
-	--context->stringCount;
+	cymbContextPop(context);
 }
 
 static void cymbDoTreeTest(const CymbTreeTest* const test, const CymbTreeFunction function, CymbTestContext* const context)
 {
-	context->diagnostics.count = 0;
+	const CymbArenaSave save = cymbArenaSave(&context->arena);
 
-	CymbNode nodes[256];
-	CymbNode* children[256];
+	CymbTree tree = {.arena = &context->arena};
 
-	CymbTree tree = {.nodes = nodes, .children = children};
-	CymbTreeBuilder builder = {
-		.tree = &tree,
-		.nodesCapacity = CYMB_LENGTH(nodes),
-		.childrenCapacity = CYMB_LENGTH(children),
-		.lastStored = CYMB_LENGTH(children)
-	};
+	CymbTokenList tokens = test->tokens;
 
-	CymbConstTokenList tokens = test->tokens;
-
-	CymbParseResult parseResult;
-	const CymbResult result = function(&builder, &tokens, &parseResult, &context->diagnostics);
-	if(result != CYMB_SUCCESS)
-	{
-		cymbFail(context, "Parse failed.");
-		return;
-	}
-
-	if(parseResult != test->result)
+	const CymbResult result = function(&tree, &tokens, &context->diagnostics);
+	if(result != test->result)
 	{
 		cymbFail(context, "Wrong result.");
-		return;
+		goto end;
 	}
 
-	cymbCompareDiagnostics(&(CymbConstDiagnosticList){
-		.diagnostics = context->diagnostics.diagnostics,
-		.count = context->diagnostics.count
-	}, &test->diagnostics, context);
-
-	if(parseResult != CYMB_PARSE_MATCH)
-	{
-		return;
-	}
+	cymbCompareDiagnostics(&context->diagnostics, &test->diagnostics, context);
 
 	if(test->endTokensOffset > 0 && (tokens.tokens != test->tokens.tokens + test->endTokensOffset || tokens.count != test->tokens.count - test->endTokensOffset))
 	{
 		cymbFail(context, "Wrong end tokens.");
 	}
 
-	cymbCompareTrees(&builder, &test->solution, context);
+	cymbCompareTrees(&tree, &test->solution, context);
+
+	end:
+	cymbArenaRestore(&context->arena, save);
+	cymbDiagnosticListFree(&context->diagnostics);
 }
 
 static void cymbTestParentheses(CymbTestContext* const context)
 {
-	const char* const format = "%s #%zu";
-	char buffer[32];
-	context->strings[context->stringCount] = buffer;
-	++context->stringCount;
+	cymbContextPush(context, __func__);
 
-	const struct
+	struct
 	{
-		CymbConstTokenList tokens;
+		CymbTokenList tokens;
 		CymbDirection direction;
-		CymbParseResult result;
+		CymbResult result;
 		size_t startIndex;
 		size_t endIndex;
-		CymbConstDiagnosticList diagnostics;
+		CymbDiagnosticList diagnostics;
 	} tests[] = {
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{.type = CYMB_TOKEN_PLUS}
 			},
 			.count = 1
-		}, CYMB_DIRECTION_FORWARD, CYMB_PARSE_NO_MATCH, 0, 0, {}},
+		}, CYMB_DIRECTION_FORWARD, CYMB_NO_MATCH, 0, 0, {}},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_OPEN_PARENTHESIS,
 					.info = {
@@ -317,17 +335,9 @@ static void cymbTestParentheses(CymbTestContext* const context)
 				}
 			},
 			.count = 1
-		}, CYMB_DIRECTION_FORWARD, CYMB_PARSE_INVALID, 0, 0, {
-			.count = 1,
-			.diagnostics = (const CymbDiagnostic[]){
-				{
-					.type = CYMB_UNMATCHED_PARENTHESIS,
-					.info = tests[1].tokens.tokens[0].info
-				}
-			}
-		}},
+		}, CYMB_DIRECTION_FORWARD, CYMB_INVALID, 0, 0, {}},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_CLOSE_PARENTHESIS,
 					.info = {
@@ -338,31 +348,23 @@ static void cymbTestParentheses(CymbTestContext* const context)
 				}
 			},
 			.count = 1
-		}, CYMB_DIRECTION_BACKWARD, CYMB_PARSE_INVALID, 0, 0, {
-			.count = 1,
-			.diagnostics = (const CymbDiagnostic[]){
-				{
-					.type = CYMB_UNMATCHED_PARENTHESIS,
-					.info = tests[2].tokens.tokens[0].info
-				}
-			}
-		}},
+		}, CYMB_DIRECTION_BACKWARD, CYMB_INVALID, 0, 0, {}},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{.type = CYMB_TOKEN_OPEN_PARENTHESIS},
 				{.type = CYMB_TOKEN_CLOSE_PARENTHESIS}
 			},
 			.count = 2
-		}, CYMB_DIRECTION_FORWARD, CYMB_PARSE_MATCH, 0, 1, {}},
+		}, CYMB_DIRECTION_FORWARD, CYMB_SUCCESS, 0, 1, {}},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{.type = CYMB_TOKEN_OPEN_PARENTHESIS},
 				{.type = CYMB_TOKEN_CLOSE_PARENTHESIS}
 			},
 			.count = 2
-		}, CYMB_DIRECTION_BACKWARD, CYMB_PARSE_MATCH, 1, 0, {}},
+		}, CYMB_DIRECTION_BACKWARD, CYMB_SUCCESS, 1, 0, {}},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_CLOSE_PARENTHESIS,
 					.info = {
@@ -375,17 +377,9 @@ static void cymbTestParentheses(CymbTestContext* const context)
 				{.type = CYMB_TOKEN_CLOSE_PARENTHESIS}
 			},
 			.count = 3
-		}, CYMB_DIRECTION_FORWARD, CYMB_PARSE_INVALID, 0, 0, {
-			.count = 1,
-			.diagnostics = (const CymbDiagnostic[]){
-				{
-					.type = CYMB_UNMATCHED_PARENTHESIS,
-					.info = tests[5].tokens.tokens[0].info
-				}
-			}
-		}},
+		}, CYMB_DIRECTION_FORWARD, CYMB_INVALID, 0, 0, {}},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{.type = CYMB_TOKEN_OPEN_PARENTHESIS},
 				{.type = CYMB_TOKEN_CLOSE_PARENTHESIS},
 				{
@@ -398,17 +392,9 @@ static void cymbTestParentheses(CymbTestContext* const context)
 				}
 			},
 			.count = 3
-		}, CYMB_DIRECTION_BACKWARD, CYMB_PARSE_INVALID, 2, 2, {
-			.count = 1,
-			.diagnostics = (const CymbDiagnostic[]){
-				{
-					.type = CYMB_UNMATCHED_PARENTHESIS,
-					.info = tests[6].tokens.tokens[2].info
-				}
-			}
-		}},
+		}, CYMB_DIRECTION_BACKWARD, CYMB_INVALID, 2, 2, {}},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{.type = CYMB_TOKEN_OPEN_PARENTHESIS},
 				{.type = CYMB_TOKEN_PLUS},
 				{.type = CYMB_TOKEN_OPEN_PARENTHESIS},
@@ -419,9 +405,9 @@ static void cymbTestParentheses(CymbTestContext* const context)
 				{.type = CYMB_TOKEN_PLUS}
 			},
 			.count = 8
-		}, CYMB_DIRECTION_FORWARD, CYMB_PARSE_MATCH, 0, 6, {}},
+		}, CYMB_DIRECTION_FORWARD, CYMB_SUCCESS, 0, 6, {}},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{.type = CYMB_TOKEN_PLUS},
 				{.type = CYMB_TOKEN_OPEN_PARENTHESIS},
 				{.type = CYMB_TOKEN_PLUS},
@@ -432,55 +418,78 @@ static void cymbTestParentheses(CymbTestContext* const context)
 				{.type = CYMB_TOKEN_CLOSE_PARENTHESIS}
 			},
 			.count = 8
-		}, CYMB_DIRECTION_BACKWARD, CYMB_PARSE_MATCH, 7, 1, {}}
+		}, CYMB_DIRECTION_BACKWARD, CYMB_SUCCESS, 7, 1, {}}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
 
+	CymbDiagnostic diagnostics1[] = {
+		{
+			.type = CYMB_UNMATCHED_PARENTHESIS,
+			.info = tests[1].tokens.tokens[0].info
+		}
+	};
+	tests[1].diagnostics.start = diagnostics1;
+
+	CymbDiagnostic diagnostics2[] = {
+		{
+			.type = CYMB_UNMATCHED_PARENTHESIS,
+			.info = tests[2].tokens.tokens[0].info
+		}
+	};
+	tests[2].diagnostics.start = diagnostics2;
+
+	CymbDiagnostic diagnostics5[] = {
+		{
+			.type = CYMB_UNMATCHED_PARENTHESIS,
+			.info = tests[5].tokens.tokens[0].info
+		}
+	};
+	tests[5].diagnostics.start = diagnostics5;
+
+	CymbDiagnostic diagnostics6[] = {
+		{
+			.type = CYMB_UNMATCHED_PARENTHESIS,
+			.info = tests[6].tokens.tokens[2].info
+		}
+	};
+	tests[6].diagnostics.start = diagnostics6;
+
 	for(size_t testIndex = 0; testIndex < testCount; ++testIndex)
 	{
-		context->diagnostics.count = 0;
+		cymbArenaClear(&context->arena);
+		cymbDiagnosticListFree(&context->diagnostics);
 
-		snprintf(buffer, sizeof(buffer), format, __func__, testIndex);
+		cymbContextSetIndex(context, testIndex);
 
 		size_t tokenIndex = tests[testIndex].startIndex;
-		CymbParseResult parseResult;
-		if(cymbSkipParentheses(&tests[testIndex].tokens, tests[testIndex].direction, &parseResult, &tokenIndex, &context->diagnostics) != CYMB_SUCCESS)
+		const CymbResult result = cymbSkipParentheses(&tests[testIndex].tokens, tests[testIndex].direction, &tokenIndex, &context->diagnostics);
+
+		if(result != tests[testIndex].result)
 		{
 			cymbFail(context, "Wrong result.");
 			continue;
 		}
 
-		if(parseResult != tests[testIndex].result)
-		{
-			cymbFail(context, "Wrong parse result.");
-			continue;
-		}
-
-		if(parseResult == CYMB_PARSE_MATCH && tokenIndex != tests[testIndex].endIndex)
+		if(result == CYMB_SUCCESS && tokenIndex != tests[testIndex].endIndex)
 		{
 			cymbFail(context, "Wrong token index.");
 			continue;
 		}
 
-		if(parseResult == CYMB_PARSE_INVALID)
+		if(result == CYMB_INVALID)
 		{
-			cymbCompareDiagnostics(&(const CymbConstDiagnosticList){
-				.count = context->diagnostics.count,
-				.diagnostics = context->diagnostics.diagnostics
-			}, &tests[testIndex].diagnostics, context);
+			cymbCompareDiagnostics(&context->diagnostics, &tests[testIndex].diagnostics, context);
 		}
 	}
 
-	--context->stringCount;
+	cymbContextPop(context);
 }
 
 static void cymbTestExpressions(CymbTestContext* const context)
 {
-	const char* const format = "%s #%zu";
-	char buffer[32];
-	context->strings[context->stringCount] = buffer;
-	++context->stringCount;
+	cymbContextPush(context, __func__);
 
+	const CymbConstString test0String = CYMB_STRING("5 +");
 	const CymbConstString test1String = CYMB_STRING("a");
 	const CymbConstString test2String = CYMB_STRING("((5 * (26 + 27 * 28 + 29) + 37))");
 	const CymbConstString test3String = CYMB_STRING("0 & 1 << 2 == 3 + 4 * 5 || 6 ^ 7 < 8 >> 9 / 10 && 11 - 12 >= 13 != 14 <= 15 | 16 > 17 % 18");
@@ -488,16 +497,24 @@ static void cymbTestExpressions(CymbTestContext* const context)
 	const CymbConstString test5String = CYMB_STRING("a += b * 5 * 3 = 1 + 2");
 	const CymbConstString test6String = CYMB_STRING("a * (b + c");
 
-	const CymbTreeTest tests[] = {
+	CymbTreeTest tests[] = {
 		{{
-			.tokens = (const CymbToken[]){
-				{.type = CYMB_TOKEN_CONSTANT, .constant = {CYMB_CONSTANT_INT, 5}},
+			.tokens = (CymbToken[]){
+				{
+					.type = CYMB_TOKEN_CONSTANT,
+					.constant = {CYMB_CONSTANT_INT, 5},
+					.info = {
+						.position = {1, 1},
+						.line = test0String,
+						.hint = {test0String.string, 1}
+					}
+				},
 				{.type = CYMB_TOKEN_PLUS}
 			},
 			.count = 2
-		}, CYMB_PARSE_INVALID, {}, {}, 0},
+		}, CYMB_INVALID, {}, {}, 0},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_IDENTIFIER,
 					.info = {
@@ -508,19 +525,9 @@ static void cymbTestExpressions(CymbTestContext* const context)
 				}
 			},
 			.count = 1
-		}, CYMB_PARSE_MATCH, {
-			.tree = &(CymbTree){
-				.nodes = (CymbNode[]){
-					{
-						.type = CYMB_NODE_IDENTIFIER,
-						.info = tests[1].tokens.tokens[0].info
-					}
-				},
-				.count = 1
-			}
-		}, {}, 1},
+		}, CYMB_SUCCESS, {}, {}, 1},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_OPEN_PARENTHESIS,
 					.info = {
@@ -665,70 +672,9 @@ static void cymbTestExpressions(CymbTestContext* const context)
 				}
 			},
 			.count = 17
-		}, CYMB_PARSE_MATCH, {
-			.tree = &(CymbTree){
-				.nodes = (CymbNode[]){
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 5},
-						.info = tests[2].tokens.tokens[2].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 26},
-						.info = tests[2].tokens.tokens[5].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 27},
-						.info = tests[2].tokens.tokens[7].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 28},
-						.info = tests[2].tokens.tokens[9].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {CYMB_BINARY_OPERATOR_MULTIPLICATION},
-						.info = tests[2].tokens.tokens[8].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {CYMB_BINARY_OPERATOR_ADDITION},
-						.info = tests[2].tokens.tokens[6].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 29},
-						.info = tests[2].tokens.tokens[11].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {CYMB_BINARY_OPERATOR_ADDITION},
-						.info = tests[2].tokens.tokens[10].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {CYMB_BINARY_OPERATOR_MULTIPLICATION},
-						.info = tests[2].tokens.tokens[3].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 37},
-						.info = tests[2].tokens.tokens[14].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {CYMB_BINARY_OPERATOR_ADDITION},
-						.info = tests[2].tokens.tokens[13].info
-					}
-				},
-				.count = 11
-			}
-		}, {}, 17},
+		}, CYMB_SUCCESS, {}, {}, 17},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_CONSTANT,
 					.constant = {CYMB_CONSTANT_INT, 0},
@@ -1046,200 +992,9 @@ static void cymbTestExpressions(CymbTestContext* const context)
 				}
 			},
 			.count = 37
-		}, CYMB_PARSE_MATCH, {
-			.tree = &(CymbTree){
-				.nodes = (CymbNode[]){
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 0},
-						.info = tests[3].tokens.tokens[0].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 1},
-						.info = tests[3].tokens.tokens[2].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 2},
-						.info = tests[3].tokens.tokens[4].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {CYMB_BINARY_OPERATOR_LESSFT_SHIFT},
-						.info = tests[3].tokens.tokens[3].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 3},
-						.info = tests[3].tokens.tokens[6].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 4},
-						.info = tests[3].tokens.tokens[8].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 5},
-						.info = tests[3].tokens.tokens[10].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {CYMB_BINARY_OPERATOR_MULTIPLICATION},
-						.info = tests[3].tokens.tokens[9].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {CYMB_BINARY_OPERATOR_ADDITION},
-						.info = tests[3].tokens.tokens[7].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {CYMB_BINARY_OPERATOR_EQUAL},
-						.info = tests[3].tokens.tokens[5].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {CYMB_BINARY_OPERATOR_BITWISE_AND},
-						.info = tests[3].tokens.tokens[1].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 6},
-						.info = tests[3].tokens.tokens[12].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 7},
-						.info = tests[3].tokens.tokens[14].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 8},
-						.info = tests[3].tokens.tokens[16].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 9},
-						.info = tests[3].tokens.tokens[18].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 10},
-						.info = tests[3].tokens.tokens[20].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {CYMB_BINARY_OPERATOR_DIVISION},
-						.info = tests[3].tokens.tokens[19].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {CYMB_BINARY_OPERATOR_RIGHT_SHIFT},
-						.info = tests[3].tokens.tokens[17].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {CYMB_BINARY_OPERATOR_LESS},
-						.info = tests[3].tokens.tokens[15].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {CYMB_BINARY_OPERATOR_BITWISE_EXCLUSIVE_OR},
-						.info = tests[3].tokens.tokens[13].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 11},
-						.info = tests[3].tokens.tokens[22].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 12},
-						.info = tests[3].tokens.tokens[24].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {CYMB_BINARY_OPERATOR_SUBTRACTION},
-						.info = tests[3].tokens.tokens[23].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 13},
-						.info = tests[3].tokens.tokens[26].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {CYMB_BINARY_OPERATOR_GREATER_EQUAL},
-						.info = tests[3].tokens.tokens[25].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 14},
-						.info = tests[3].tokens.tokens[28].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 15},
-						.info = tests[3].tokens.tokens[30].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {CYMB_BINARY_OPERATOR_LESS_EQUAL},
-						.info = tests[3].tokens.tokens[29].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {CYMB_BINARY_OPERATOR_NOT_EQUAL},
-						.info = tests[3].tokens.tokens[27].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 16},
-						.info = tests[3].tokens.tokens[32].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 17},
-						.info = tests[3].tokens.tokens[34].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 18},
-						.info = tests[3].tokens.tokens[36].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {CYMB_BINARY_OPERATOR_REMAINDER},
-						.info = tests[3].tokens.tokens[35].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {CYMB_BINARY_OPERATOR_GREATER},
-						.info = tests[3].tokens.tokens[33].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {CYMB_BINARY_OPERATOR_BITWISE_OR},
-						.info = tests[3].tokens.tokens[31].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {CYMB_BINARY_OPERATOR_LOGICAL_AND},
-						.info = tests[3].tokens.tokens[21].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {CYMB_BINARY_OPERATOR_LOGICAL_OR},
-						.info = tests[3].tokens.tokens[11].info
-					}
-				},
-				.count = 37
-			}
-		}, {}, 37},
+		}, CYMB_SUCCESS, {}, {}, 37},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_MINUS,
 					.info = {
@@ -1379,78 +1134,9 @@ static void cymbTestExpressions(CymbTestContext* const context)
 				}
 			},
 			.count = 17
-		}, CYMB_PARSE_MATCH, {
-			.tree = &(CymbTree){
-				.nodes = (CymbNode[]){
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.info = tests[4].tokens.tokens[2].info,
-						.constantNode = tests[4].tokens.tokens[2].constant
-					},
-					{
-						.type = CYMB_NODE_UNARY_OPERATOR,
-						.info = tests[4].tokens.tokens[1].info,
-						.unaryOperatorNode = {.operator = CYMB_UNARY_OPERATOR_BITWISE_NOT}
-					},
-					{
-						.type = CYMB_NODE_UNARY_OPERATOR,
-						.info = tests[4].tokens.tokens[0].info,
-						.unaryOperatorNode = {.operator = CYMB_UNARY_OPERATOR_NEGATIVE}
-					},
-					{
-						.type = CYMB_NODE_IDENTIFIER,
-						.info = tests[4].tokens.tokens[7].info
-					},
-					{
-						.type = CYMB_NODE_UNARY_OPERATOR,
-						.info = tests[4].tokens.tokens[6].info,
-						.unaryOperatorNode = {.operator = CYMB_UNARY_OPERATOR_ADDRESS}
-					},
-					{
-						.type = CYMB_NODE_UNARY_OPERATOR,
-						.info = tests[4].tokens.tokens[5].info,
-						.unaryOperatorNode = {.operator = CYMB_UNARY_OPERATOR_INDIRECTION}
-					},
-					{
-						.type = CYMB_NODE_IDENTIFIER,
-						.info = tests[4].tokens.tokens[14].info
-					},
-					{
-						.type = CYMB_NODE_UNARY_OPERATOR,
-						.info = tests[4].tokens.tokens[13].info,
-						.unaryOperatorNode = {.operator = CYMB_UNARY_OPERATOR_POSITIVE}
-					},
-					{
-						.type = CYMB_NODE_UNARY_OPERATOR,
-						.info = tests[4].tokens.tokens[12].info,
-						.unaryOperatorNode = {.operator = CYMB_UNARY_OPERATOR_DECREMENT}
-					},
-					{
-						.type = CYMB_NODE_UNARY_OPERATOR,
-						.info = tests[4].tokens.tokens[10].info,
-						.unaryOperatorNode = {.operator = CYMB_UNARY_OPERATOR_LOGICAL_NOT}
-					},
-					{
-						.type = CYMB_NODE_UNARY_OPERATOR,
-						.info = tests[4].tokens.tokens[9].info,
-						.unaryOperatorNode = {.operator = CYMB_UNARY_OPERATOR_INCREMENT}
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.info = tests[4].tokens.tokens[8].info,
-						.binaryOperatorNode = {.operator = CYMB_BINARY_OPERATOR_SUBTRACTION}
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.info = tests[4].tokens.tokens[3].info,
-						.binaryOperatorNode = {.operator = CYMB_BINARY_OPERATOR_MULTIPLICATION}
-					}
-				},
-				.count = 13
-			}
-		}, {}, 17},
+		}, CYMB_SUCCESS, {}, {}, 17},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_IDENTIFIER,
 					.info = {
@@ -1545,68 +1231,9 @@ static void cymbTestExpressions(CymbTestContext* const context)
 				}
 			},
 			.count = 11
-		}, CYMB_PARSE_MATCH, {
-			.tree = &(CymbTree){
-				.nodes = (CymbNode[]){
-					{
-						.type = CYMB_NODE_IDENTIFIER,
-						.info = tests[5].tokens.tokens[0].info
-					},
-					{
-						.type = CYMB_NODE_IDENTIFIER,
-						.info = tests[5].tokens.tokens[2].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.info = tests[5].tokens.tokens[4].info,
-						.constantNode = {CYMB_CONSTANT_INT, 5}
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.info = tests[5].tokens.tokens[3].info,
-						.binaryOperatorNode = {.operator = CYMB_BINARY_OPERATOR_MULTIPLICATION}
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.info = tests[5].tokens.tokens[6].info,
-						.constantNode = {CYMB_CONSTANT_INT, 3}
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.info = tests[5].tokens.tokens[5].info,
-						.binaryOperatorNode = {CYMB_BINARY_OPERATOR_MULTIPLICATION}
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.info = tests[5].tokens.tokens[8].info,
-						.constantNode = {CYMB_CONSTANT_INT, 1}
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.info = tests[5].tokens.tokens[10].info,
-						.constantNode = {CYMB_CONSTANT_INT, 2}
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.info = tests[5].tokens.tokens[9].info,
-						.binaryOperatorNode = {.operator = CYMB_BINARY_OPERATOR_ADDITION}
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.info = tests[5].tokens.tokens[7].info,
-						.binaryOperatorNode = {.operator = CYMB_BINARY_OPERATOR_ASSIGNMENT}
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.info = tests[5].tokens.tokens[1].info,
-						.binaryOperatorNode = {.operator = CYMB_BINARY_OPERATOR_ADDITION_ASSIGNMENT}
-					}
-				},
-				.count = 11
-			}
-		}, {}, 11},
+		}, CYMB_SUCCESS, {}, {}, 11},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_IDENTIFIER,
 					.info = {
@@ -1657,125 +1284,604 @@ static void cymbTestExpressions(CymbTestContext* const context)
 				}
 			},
 			.count = 6
-		}, CYMB_PARSE_INVALID, {
-			.tree = &(CymbTree){
-				.nodes = (CymbNode[]){
-					{
-						.type = CYMB_NODE_IDENTIFIER,
-						.info = tests[6].tokens.tokens[0].info
-					}
-				},
-				.count = 1
-			}
-		}, {
-			.diagnostics = (const CymbDiagnostic[]){
-				{
-					.type = CYMB_UNMATCHED_PARENTHESIS,
-					.info = tests[6].tokens.tokens[2].info
-				}
-			},
-			.count = 1
-		}, 3}
+		}, CYMB_INVALID, {}, {}, 6}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
 
-	tests[2].solution.tree->nodes[4].binaryOperatorNode.leftNode = &tests[2].solution.tree->nodes[2];
-	tests[2].solution.tree->nodes[4].binaryOperatorNode.rightNode = &tests[2].solution.tree->nodes[3];
-	tests[2].solution.tree->nodes[5].binaryOperatorNode.leftNode = &tests[2].solution.tree->nodes[1];
-	tests[2].solution.tree->nodes[5].binaryOperatorNode.rightNode = &tests[2].solution.tree->nodes[4];
-	tests[2].solution.tree->nodes[7].binaryOperatorNode.leftNode = &tests[2].solution.tree->nodes[5];
-	tests[2].solution.tree->nodes[7].binaryOperatorNode.rightNode = &tests[2].solution.tree->nodes[6];
-	tests[2].solution.tree->nodes[8].binaryOperatorNode.leftNode = &tests[2].solution.tree->nodes[0];
-	tests[2].solution.tree->nodes[8].binaryOperatorNode.rightNode = &tests[2].solution.tree->nodes[7];
-	tests[2].solution.tree->nodes[10].binaryOperatorNode.leftNode = &tests[2].solution.tree->nodes[8];
-	tests[2].solution.tree->nodes[10].binaryOperatorNode.rightNode = &tests[2].solution.tree->nodes[9];
+	CymbNode nodes0[] = {
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = tests[0].tokens.tokens[0].constant,
+			.info = tests[0].tokens.tokens[0].info
+		}
+	};
+	tests[0].solution.root = nodes0 + 0;
+	CymbDiagnostic diagnostics0[] = {
+		{
+			.type = CYMB_EXPECTED_EXPRESSION,
+			.info = tests[0].tokens.tokens[1].info
+		}
+	};
+	tests[0].diagnostics.start = diagnostics0;
 
-	tests[3].solution.tree->nodes[3].binaryOperatorNode.leftNode = &tests[3].solution.tree->nodes[1];
-	tests[3].solution.tree->nodes[3].binaryOperatorNode.rightNode = &tests[3].solution.tree->nodes[2];
-	tests[3].solution.tree->nodes[7].binaryOperatorNode.leftNode = &tests[3].solution.tree->nodes[5];
-	tests[3].solution.tree->nodes[7].binaryOperatorNode.rightNode = &tests[3].solution.tree->nodes[6];
-	tests[3].solution.tree->nodes[8].binaryOperatorNode.leftNode = &tests[3].solution.tree->nodes[4];
-	tests[3].solution.tree->nodes[8].binaryOperatorNode.rightNode = &tests[3].solution.tree->nodes[7];
-	tests[3].solution.tree->nodes[9].binaryOperatorNode.leftNode = &tests[3].solution.tree->nodes[3];
-	tests[3].solution.tree->nodes[9].binaryOperatorNode.rightNode = &tests[3].solution.tree->nodes[8];
-	tests[3].solution.tree->nodes[10].binaryOperatorNode.leftNode = &tests[3].solution.tree->nodes[0];
-	tests[3].solution.tree->nodes[10].binaryOperatorNode.rightNode = &tests[3].solution.tree->nodes[9];
-	tests[3].solution.tree->nodes[16].binaryOperatorNode.leftNode = &tests[3].solution.tree->nodes[14];
-	tests[3].solution.tree->nodes[16].binaryOperatorNode.rightNode = &tests[3].solution.tree->nodes[15];
-	tests[3].solution.tree->nodes[17].binaryOperatorNode.leftNode = &tests[3].solution.tree->nodes[13];
-	tests[3].solution.tree->nodes[17].binaryOperatorNode.rightNode = &tests[3].solution.tree->nodes[16];
-	tests[3].solution.tree->nodes[18].binaryOperatorNode.leftNode = &tests[3].solution.tree->nodes[12];
-	tests[3].solution.tree->nodes[18].binaryOperatorNode.rightNode = &tests[3].solution.tree->nodes[17];
-	tests[3].solution.tree->nodes[19].binaryOperatorNode.leftNode = &tests[3].solution.tree->nodes[11];
-	tests[3].solution.tree->nodes[19].binaryOperatorNode.rightNode = &tests[3].solution.tree->nodes[18];
-	tests[3].solution.tree->nodes[22].binaryOperatorNode.leftNode = &tests[3].solution.tree->nodes[20];
-	tests[3].solution.tree->nodes[22].binaryOperatorNode.rightNode = &tests[3].solution.tree->nodes[21];
-	tests[3].solution.tree->nodes[24].binaryOperatorNode.leftNode = &tests[3].solution.tree->nodes[22];
-	tests[3].solution.tree->nodes[24].binaryOperatorNode.rightNode = &tests[3].solution.tree->nodes[23];
-	tests[3].solution.tree->nodes[27].binaryOperatorNode.leftNode = &tests[3].solution.tree->nodes[25];
-	tests[3].solution.tree->nodes[27].binaryOperatorNode.rightNode = &tests[3].solution.tree->nodes[26];
-	tests[3].solution.tree->nodes[28].binaryOperatorNode.leftNode = &tests[3].solution.tree->nodes[24];
-	tests[3].solution.tree->nodes[28].binaryOperatorNode.rightNode = &tests[3].solution.tree->nodes[27];
-	tests[3].solution.tree->nodes[32].binaryOperatorNode.leftNode = &tests[3].solution.tree->nodes[30];
-	tests[3].solution.tree->nodes[32].binaryOperatorNode.rightNode = &tests[3].solution.tree->nodes[31];
-	tests[3].solution.tree->nodes[33].binaryOperatorNode.leftNode = &tests[3].solution.tree->nodes[29];
-	tests[3].solution.tree->nodes[33].binaryOperatorNode.rightNode = &tests[3].solution.tree->nodes[32];
-	tests[3].solution.tree->nodes[34].binaryOperatorNode.leftNode = &tests[3].solution.tree->nodes[28];
-	tests[3].solution.tree->nodes[34].binaryOperatorNode.rightNode = &tests[3].solution.tree->nodes[33];
-	tests[3].solution.tree->nodes[35].binaryOperatorNode.leftNode = &tests[3].solution.tree->nodes[19];
-	tests[3].solution.tree->nodes[35].binaryOperatorNode.rightNode = &tests[3].solution.tree->nodes[34];
-	tests[3].solution.tree->nodes[36].binaryOperatorNode.leftNode = &tests[3].solution.tree->nodes[10];
-	tests[3].solution.tree->nodes[36].binaryOperatorNode.rightNode = &tests[3].solution.tree->nodes[35];
+	CymbNode nodes1[] = {
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[1].tokens.tokens[0].info
+		}
+	};
+	tests[1].solution.root = nodes1 + 0;
 
-	tests[4].solution.tree->nodes[1].unaryOperatorNode.node = &tests[4].solution.tree->nodes[0];
-	tests[4].solution.tree->nodes[2].unaryOperatorNode.node = &tests[4].solution.tree->nodes[1];
-	tests[4].solution.tree->nodes[4].unaryOperatorNode.node = &tests[4].solution.tree->nodes[3];
-	tests[4].solution.tree->nodes[5].unaryOperatorNode.node = &tests[4].solution.tree->nodes[4];
-	tests[4].solution.tree->nodes[7].unaryOperatorNode.node = &tests[4].solution.tree->nodes[6];
-	tests[4].solution.tree->nodes[8].unaryOperatorNode.node = &tests[4].solution.tree->nodes[7];
-	tests[4].solution.tree->nodes[9].unaryOperatorNode.node = &tests[4].solution.tree->nodes[8];
-	tests[4].solution.tree->nodes[10].unaryOperatorNode.node = &tests[4].solution.tree->nodes[9];
-	tests[4].solution.tree->nodes[11].binaryOperatorNode.leftNode = &tests[4].solution.tree->nodes[5];
-	tests[4].solution.tree->nodes[11].binaryOperatorNode.rightNode = &tests[4].solution.tree->nodes[10];
-	tests[4].solution.tree->nodes[12].binaryOperatorNode.leftNode = &tests[4].solution.tree->nodes[2];
-	tests[4].solution.tree->nodes[12].binaryOperatorNode.rightNode = &tests[4].solution.tree->nodes[11];
+	CymbNode nodes2[] = {
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 5},
+			.info = tests[2].tokens.tokens[2].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 26},
+			.info = tests[2].tokens.tokens[5].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 27},
+			.info = tests[2].tokens.tokens[7].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 28},
+			.info = tests[2].tokens.tokens[9].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_MULTIPLICATION,
+				.leftNode = &nodes2[2],
+				.rightNode = &nodes2[3]
+			},
+			.info = tests[2].tokens.tokens[8].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_ADDITION,
+				.leftNode = &nodes2[1],
+				.rightNode = &nodes2[4]
+			},
+			.info = tests[2].tokens.tokens[6].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 29},
+			.info = tests[2].tokens.tokens[11].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_ADDITION,
+				.leftNode = &nodes2[5],
+				.rightNode = &nodes2[6]
+			},
+			.info = tests[2].tokens.tokens[10].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_MULTIPLICATION,
+				.leftNode = &nodes2[0],
+				.rightNode = &nodes2[7]
+			},
+			.info = tests[2].tokens.tokens[3].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 37},
+			.info = tests[2].tokens.tokens[14].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_ADDITION,
+				.leftNode = &nodes2[8],
+				.rightNode = &nodes2[9]
+			},
+			.info = tests[2].tokens.tokens[13].info
+		}
+	};
+	tests[2].solution.root = nodes2 + 10;
 
-	tests[5].solution.tree->nodes[3].binaryOperatorNode.leftNode = &tests[5].solution.tree->nodes[1];
-	tests[5].solution.tree->nodes[3].binaryOperatorNode.rightNode = &tests[5].solution.tree->nodes[2];
-	tests[5].solution.tree->nodes[5].binaryOperatorNode.leftNode = &tests[5].solution.tree->nodes[3];
-	tests[5].solution.tree->nodes[5].binaryOperatorNode.rightNode = &tests[5].solution.tree->nodes[4];
-	tests[5].solution.tree->nodes[8].binaryOperatorNode.leftNode = &tests[5].solution.tree->nodes[6];
-	tests[5].solution.tree->nodes[8].binaryOperatorNode.rightNode = &tests[5].solution.tree->nodes[7];
-	tests[5].solution.tree->nodes[9].binaryOperatorNode.leftNode = &tests[5].solution.tree->nodes[5];
-	tests[5].solution.tree->nodes[9].binaryOperatorNode.rightNode = &tests[5].solution.tree->nodes[8];
-	tests[5].solution.tree->nodes[10].binaryOperatorNode.leftNode = &tests[5].solution.tree->nodes[0];
-	tests[5].solution.tree->nodes[10].binaryOperatorNode.rightNode = &tests[5].solution.tree->nodes[9];
+	CymbNode nodes3[] = {
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 0},
+			.info = tests[3].tokens.tokens[0].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 1},
+			.info = tests[3].tokens.tokens[2].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 2},
+			.info = tests[3].tokens.tokens[4].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_LESSFT_SHIFT,
+				.leftNode = &nodes3[1],
+				.rightNode = &nodes3[2]
+			},
+			.info = tests[3].tokens.tokens[3].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 3},
+			.info = tests[3].tokens.tokens[6].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 4},
+			.info = tests[3].tokens.tokens[8].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 5},
+			.info = tests[3].tokens.tokens[10].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_MULTIPLICATION,
+				.leftNode = &nodes3[5],
+				.rightNode = &nodes3[6]
+			},
+			.info = tests[3].tokens.tokens[9].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_ADDITION,
+				.leftNode = &nodes3[4],
+				.rightNode = &nodes3[7]
+			},
+			.info = tests[3].tokens.tokens[7].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_EQUAL,
+				.leftNode = &nodes3[3],
+				.rightNode = &nodes3[8]
+			},
+			.info = tests[3].tokens.tokens[5].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_BITWISE_AND,
+				.leftNode = &nodes3[0],
+				.rightNode = &nodes3[9]
+			},
+			.info = tests[3].tokens.tokens[1].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 6},
+			.info = tests[3].tokens.tokens[12].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 7},
+			.info = tests[3].tokens.tokens[14].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 8},
+			.info = tests[3].tokens.tokens[16].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 9},
+			.info = tests[3].tokens.tokens[18].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 10},
+			.info = tests[3].tokens.tokens[20].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_DIVISION,
+				.leftNode = &nodes3[14],
+				.rightNode = &nodes3[15]
+			},
+			.info = tests[3].tokens.tokens[19].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_RIGHT_SHIFT,
+				.leftNode = &nodes3[13],
+				.rightNode = &nodes3[16]
+			},
+			.info = tests[3].tokens.tokens[17].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_LESS,
+				.leftNode = &nodes3[12],
+				.rightNode = &nodes3[17]
+			},
+			.info = tests[3].tokens.tokens[15].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_BITWISE_EXCLUSIVE_OR,
+				.leftNode = &nodes3[11],
+				.rightNode = &nodes3[18]
+			},
+			.info = tests[3].tokens.tokens[13].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 11},
+			.info = tests[3].tokens.tokens[22].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 12},
+			.info = tests[3].tokens.tokens[24].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_SUBTRACTION,
+				.leftNode = &nodes3[20],
+				.rightNode = &nodes3[21]
+			},
+			.info = tests[3].tokens.tokens[23].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 13},
+			.info = tests[3].tokens.tokens[26].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_GREATER_EQUAL,
+				.leftNode = &nodes3[22],
+				.rightNode = &nodes3[23]
+			},
+			.info = tests[3].tokens.tokens[25].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 14},
+			.info = tests[3].tokens.tokens[28].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 15},
+			.info = tests[3].tokens.tokens[30].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_LESS_EQUAL,
+				.leftNode = &nodes3[25],
+				.rightNode = &nodes3[26]
+			},
+			.info = tests[3].tokens.tokens[29].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_NOT_EQUAL,
+				.leftNode = &nodes3[24],
+				.rightNode = &nodes3[27]
+			},
+			.info = tests[3].tokens.tokens[27].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 16},
+			.info = tests[3].tokens.tokens[32].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 17},
+			.info = tests[3].tokens.tokens[34].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 18},
+			.info = tests[3].tokens.tokens[36].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_REMAINDER,
+				.leftNode = &nodes3[30],
+				.rightNode = &nodes3[31]
+			},
+			.info = tests[3].tokens.tokens[35].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_GREATER,
+				.leftNode = &nodes3[29],
+				.rightNode = &nodes3[32]
+			},
+			.info = tests[3].tokens.tokens[33].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_BITWISE_OR,
+				.leftNode = &nodes3[28],
+				.rightNode = &nodes3[33]
+			},
+			.info = tests[3].tokens.tokens[31].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_LOGICAL_AND,
+				.leftNode = &nodes3[19],
+				.rightNode = &nodes3[34]
+			},
+			.info = tests[3].tokens.tokens[21].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_LOGICAL_OR,
+				.leftNode = &nodes3[10],
+				.rightNode = &nodes3[35]
+			},
+			.info = tests[3].tokens.tokens[11].info
+		}
+	};
+	tests[3].solution.root = nodes3 + 36;
+
+	CymbNode nodes4[] = {
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.info = tests[4].tokens.tokens[2].info,
+			.constantNode = tests[4].tokens.tokens[2].constant
+		},
+		{
+			.type = CYMB_NODE_UNARY_OPERATOR,
+			.info = tests[4].tokens.tokens[1].info,
+			.unaryOperatorNode = {
+				.operator = CYMB_UNARY_OPERATOR_BITWISE_NOT,
+				.node = &nodes4[0]
+			}
+		},
+		{
+			.type = CYMB_NODE_UNARY_OPERATOR,
+			.info = tests[4].tokens.tokens[0].info,
+			.unaryOperatorNode = {
+				.operator = CYMB_UNARY_OPERATOR_NEGATIVE,
+				.node = &nodes4[1]
+			}
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[4].tokens.tokens[7].info
+		},
+		{
+			.type = CYMB_NODE_UNARY_OPERATOR,
+			.info = tests[4].tokens.tokens[6].info,
+			.unaryOperatorNode = {
+				.operator = CYMB_UNARY_OPERATOR_ADDRESS,
+				.node = &nodes4[3]
+			}
+		},
+		{
+			.type = CYMB_NODE_UNARY_OPERATOR,
+			.info = tests[4].tokens.tokens[5].info,
+			.unaryOperatorNode = {
+				.operator = CYMB_UNARY_OPERATOR_INDIRECTION,
+				.node = &nodes4[4]
+			}
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[4].tokens.tokens[14].info
+		},
+		{
+			.type = CYMB_NODE_UNARY_OPERATOR,
+			.info = tests[4].tokens.tokens[13].info,
+			.unaryOperatorNode = {
+				.operator = CYMB_UNARY_OPERATOR_POSITIVE,
+				.node = &nodes4[6]
+			}
+		},
+		{
+			.type = CYMB_NODE_UNARY_OPERATOR,
+			.info = tests[4].tokens.tokens[12].info,
+			.unaryOperatorNode = {
+				.operator = CYMB_UNARY_OPERATOR_DECREMENT,
+				.node = &nodes4[7]
+			}
+		},
+		{
+			.type = CYMB_NODE_UNARY_OPERATOR,
+			.info = tests[4].tokens.tokens[10].info,
+			.unaryOperatorNode = {
+				.operator = CYMB_UNARY_OPERATOR_LOGICAL_NOT,
+				.node = &nodes4[8]
+			}
+		},
+		{
+			.type = CYMB_NODE_UNARY_OPERATOR,
+			.info = tests[4].tokens.tokens[9].info,
+			.unaryOperatorNode = {
+				.operator = CYMB_UNARY_OPERATOR_INCREMENT,
+				.node = &nodes4[9]
+			}
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.info = tests[4].tokens.tokens[8].info,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_SUBTRACTION,
+				.leftNode = &nodes4[5],
+				.rightNode = &nodes4[10]
+			}
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.info = tests[4].tokens.tokens[3].info,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_MULTIPLICATION,
+				.leftNode = &nodes4[2],
+				.rightNode = &nodes4[11]
+			}
+		}
+	};
+	tests[4].solution.root = nodes4 + 12;
+
+	CymbNode nodes5[] = {
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[5].tokens.tokens[0].info
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[5].tokens.tokens[2].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.info = tests[5].tokens.tokens[4].info,
+			.constantNode = {CYMB_CONSTANT_INT, 5}
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.info = tests[5].tokens.tokens[3].info,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_MULTIPLICATION,
+				.leftNode = &nodes5[1],
+				.rightNode = &nodes5[2]
+			}
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.info = tests[5].tokens.tokens[6].info,
+			.constantNode = {CYMB_CONSTANT_INT, 3}
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.info = tests[5].tokens.tokens[5].info,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_MULTIPLICATION,
+				.leftNode = &nodes5[3],
+				.rightNode = &nodes5[4]
+			}
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.info = tests[5].tokens.tokens[8].info,
+			.constantNode = {CYMB_CONSTANT_INT, 1}
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.info = tests[5].tokens.tokens[10].info,
+			.constantNode = {CYMB_CONSTANT_INT, 2}
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.info = tests[5].tokens.tokens[9].info,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_ADDITION,
+				.leftNode = &nodes5[6],
+				.rightNode = &nodes5[7]
+			}
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.info = tests[5].tokens.tokens[7].info,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_ASSIGNMENT,
+				.leftNode = &nodes5[5],
+				.rightNode = &nodes5[8]
+			}
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.info = tests[5].tokens.tokens[1].info,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_ADDITION_ASSIGNMENT,
+				.leftNode = &nodes5[0],
+				.rightNode = &nodes5[9]
+			}
+		}
+	};
+	tests[5].solution.root = nodes5 + 10;
+
+	CymbNode nodes6[] = {
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[6].tokens.tokens[0].info
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[6].tokens.tokens[3].info
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[6].tokens.tokens[5].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_ADDITION,
+				.leftNode = &nodes6[1],
+				.rightNode = &nodes6[2]
+			},
+			.info = tests[6].tokens.tokens[4].info
+		}
+	};
+	tests[6].solution.root = nodes6 + 3;
+	CymbDiagnostic diagnostics6[] = {
+		{
+			.type = CYMB_UNMATCHED_PARENTHESIS,
+			.info = tests[6].tokens.tokens[2].info
+		}
+	};
+	tests[6].diagnostics.start = diagnostics6;
 
 	for(size_t testIndex = 0; testIndex < testCount; ++testIndex)
 	{
-		snprintf(buffer, sizeof(buffer), format, __func__, testIndex);
+		cymbContextSetIndex(context, testIndex);
 
 		cymbDoTreeTest(&tests[testIndex], cymbParseExpression, context);
 	}
 
-	--context->stringCount;
+	cymbContextPop(context);
 }
 
 static void cymbTestTypes(CymbTestContext* const context)
 {
-	const char* const format = "%s #%zu";
-	char buffer[32];
-	context->strings[context->stringCount] = buffer;
-	++context->stringCount;
+	cymbContextPush(context, __func__);
 
 	const CymbConstString test0String = CYMB_STRING("int");
 	const CymbConstString test1String = CYMB_STRING("float const*");
 	const CymbConstString test2String = CYMB_STRING("const char* restrict* const");
 	const CymbConstString test3String = CYMB_STRING("const const int const const");
 
-	const CymbTreeTest tests[] = {
+	CymbTreeTest tests[] = {
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_INT,
 					.info = {
@@ -1786,20 +1892,9 @@ static void cymbTestTypes(CymbTestContext* const context)
 				}
 			},
 			.count = 1
-		}, CYMB_PARSE_MATCH, {
-			.tree = &(CymbTree){
-				.nodes = (CymbNode[]){
-					{
-						.type = CYMB_NODE_TYPE,
-						.typeNode = {.type = CYMB_TYPE_INT},
-						.info = tests[0].tokens.tokens[0].info
-					}
-				},
-				.count = 1
-			}
-		}, {}, 0},
+		}, CYMB_SUCCESS, {}, {}, 0},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_FLOAT,
 					.info = {
@@ -1826,25 +1921,9 @@ static void cymbTestTypes(CymbTestContext* const context)
 				}
 			},
 			.count = 3
-		}, CYMB_PARSE_MATCH, {
-			.tree = &(CymbTree){
-				.nodes = (CymbNode[]){
-					{
-						.type = CYMB_NODE_TYPE,
-						.typeNode = {.type = CYMB_TYPE_FLOAT, .isConst = true},
-						.info = tests[1].tokens.tokens[0].info
-					},
-					{
-						.type = CYMB_NODE_POINTER,
-						.pointerNode = {},
-						.info = tests[1].tokens.tokens[2].info
-					}
-				},
-				.count = 2
-			}
-		}, {}, 0},
+		}, CYMB_SUCCESS, {}, {}, 0},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_CONST,
 					.info = {
@@ -1895,30 +1974,9 @@ static void cymbTestTypes(CymbTestContext* const context)
 				}
 			},
 			.count = 6
-		}, CYMB_PARSE_MATCH, {
-			.tree = &(CymbTree){
-				.nodes = (CymbNode[]){
-					{
-						.type = CYMB_NODE_TYPE,
-						.typeNode = {.type = CYMB_TYPE_CHAR, .isConst = true},
-						.info = tests[2].tokens.tokens[1].info
-					},
-					{
-						.type = CYMB_NODE_POINTER,
-						.pointerNode = {.isRestrict = true},
-						.info = tests[2].tokens.tokens[2].info
-					},
-					{
-						.type = CYMB_NODE_POINTER,
-						.pointerNode = {.isConst = true},
-						.info = tests[2].tokens.tokens[4].info
-					}
-				},
-				.count = 3
-			}
-		}, {}, 0},
+		}, CYMB_SUCCESS, {}, {}, 0},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_CONST,
 					.info = {
@@ -1961,59 +2019,75 @@ static void cymbTestTypes(CymbTestContext* const context)
 				},
 			},
 			.count = 5
-		}, CYMB_PARSE_INVALID, {
-			.tree = &(CymbTree){
-				.nodes = (CymbNode[]){
-					{
-						.type = CYMB_NODE_TYPE,
-						.typeNode = {.type = CYMB_TYPE_INT, .isConst = true},
-						.info = tests[3].tokens.tokens[2].info
-					}
-				},
-				.count = 1
-			}
-		}, {
-			.diagnostics = (const CymbDiagnostic[]){
-				{
-					.type = CYMB_MULTIPLE_CONST,
-					.info = tests[3].tokens.tokens[1].info
-				},
-				{
-					.type = CYMB_MULTIPLE_CONST,
-					.info = tests[3].tokens.tokens[4].info
-				},
-				{
-					.type = CYMB_MULTIPLE_CONST,
-					.info = tests[3].tokens.tokens[3].info
-				}
-			},
-			.count = 3
-		}, 0}
+		}, CYMB_INVALID, {}, {}, 0}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
 
-	tests[1].solution.tree->nodes[1].pointerNode.pointedNode = &tests[1].solution.tree->nodes[0];
+	CymbNode nodes0[] = {
+		{
+			.type = CYMB_NODE_TYPE,
+			.typeNode = {.type = CYMB_TYPE_INT},
+			.info = tests[0].tokens.tokens[0].info
+		}
+	};
+	tests[0].solution.root = nodes0 + 0;
 
-	tests[2].solution.tree->nodes[1].pointerNode.pointedNode = &tests[2].solution.tree->nodes[0];
-	tests[2].solution.tree->nodes[2].pointerNode.pointedNode = &tests[2].solution.tree->nodes[1];
+	CymbNode nodes1[] = {
+		{
+			.type = CYMB_NODE_TYPE,
+			.typeNode = {.type = CYMB_TYPE_FLOAT, .isConst = true},
+			.info = tests[1].tokens.tokens[0].info
+		},
+		{
+			.type = CYMB_NODE_POINTER,
+			.pointerNode = {.pointedNode = &nodes1[0]},
+			.info = tests[1].tokens.tokens[2].info
+		}
+	};
+	tests[1].solution.root = nodes1 + 1;
+
+	CymbNode nodes2[] = {
+		{
+			.type = CYMB_NODE_TYPE,
+			.typeNode = {.type = CYMB_TYPE_CHAR, .isConst = true},
+			.info = tests[2].tokens.tokens[1].info
+		},
+		{
+			.type = CYMB_NODE_POINTER,
+			.pointerNode = {.pointedNode = &nodes2[0], .isRestrict = true},
+			.info = tests[2].tokens.tokens[2].info
+		},
+		{
+			.type = CYMB_NODE_POINTER,
+			.pointerNode = {.pointedNode = &nodes2[1], .isConst = true},
+			.info = tests[2].tokens.tokens[4].info
+		}
+	};
+	tests[2].solution.root = nodes2 + 2;
+
+	CymbDiagnostic diagnostics3[] = {
+		{
+			.type = CYMB_MULTIPLE_CONST,
+			.info = tests[3].tokens.tokens[1].info
+		}
+	};
+	tests[3].diagnostics.start = diagnostics3;
 
 	for(size_t testIndex = 0; testIndex < testCount; ++testIndex)
 	{
-		snprintf(buffer, sizeof(buffer), format, __func__, testIndex);
+		cymbContextSetIndex(context, testIndex);
 
 		cymbDoTreeTest(&tests[testIndex], cymbParseType, context);
 	}
 
-	--context->stringCount;
+	cymbContextPop(context);
 }
 
 static void cymbTestStatements(CymbTestContext* const context)
 {
-	const char* const format = "%s #%zu";
-	char buffer[32];
-	context->strings[context->stringCount] = buffer;
-	++context->stringCount;
+	cymbContextPush(context, __func__);
 
+	const CymbConstString test0String = CYMB_STRING("return");
 	const CymbConstString test2String = CYMB_STRING("return;");
 	const CymbConstString test3String = CYMB_STRING("return 1 + 2; 3");
 	const CymbConstString test4String = CYMB_STRING("int my_var;");
@@ -2021,21 +2095,28 @@ static void cymbTestStatements(CymbTestContext* const context)
 	const CymbConstString test6String = CYMB_STRING("while(a > 5){int b = 3; a += b + 5;}");
 	const CymbConstString test7String = CYMB_STRING("while(0)return;return;");
 
-	const CymbTreeTest tests[] = {
+	CymbTreeTest tests[] = {
 		{{
-			.tokens = (const CymbToken[]){
-				{.type = CYMB_TOKEN_RETURN}
+			.tokens = (CymbToken[]){
+				{
+					.type = CYMB_TOKEN_RETURN,
+					.info = {
+						.position = {1, 1},
+						.line = test0String,
+						.hint = test0String
+					}
+				}
 			},
 			.count = 1
-		}, CYMB_PARSE_NO_MATCH, {}, {}, 0},
+		}, CYMB_INVALID, {}, {}, 0},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{.type = CYMB_TOKEN_SEMICOLON}
 			},
 			.count = 1
-		}, CYMB_PARSE_NO_MATCH, {}, {}, 0},
+		}, CYMB_SUCCESS, {}, {}, 0},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_RETURN,
 					.info = {
@@ -2054,20 +2135,9 @@ static void cymbTestStatements(CymbTestContext* const context)
 				}
 			},
 			.count = 2
-		}, CYMB_PARSE_MATCH, {
-			.tree = &(CymbTree){
-				.nodes = (CymbNode[]){
-					{
-						.type = CYMB_NODE_RETURN,
-						.returnNode = nullptr,
-						.info = tests[2].tokens.tokens[0].info
-					}
-				},
-				.count = 1
-			}
-		}, {}, 2},
+		}, CYMB_SUCCESS, {}, {}, 2},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_RETURN,
 					.info = {
@@ -2121,34 +2191,9 @@ static void cymbTestStatements(CymbTestContext* const context)
 				}
 			},
 			.count = 6
-		}, CYMB_PARSE_MATCH, {
-			.tree = &(CymbTree){
-				.nodes = (CymbNode[]){
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 1},
-						.info = tests[3].tokens.tokens[1].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 2},
-						.info = tests[3].tokens.tokens[3].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {CYMB_BINARY_OPERATOR_ADDITION},
-						.info = tests[3].tokens.tokens[2].info
-					},
-					{
-						.type = CYMB_NODE_RETURN,
-						.info = tests[3].tokens.tokens[0].info
-					}
-				},
-				.count = 4
-			}
-		}, {}, 5},
+		}, CYMB_SUCCESS, {}, {}, 5},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_INT,
 					.info = {
@@ -2175,28 +2220,9 @@ static void cymbTestStatements(CymbTestContext* const context)
 				}
 			},
 			.count = 3,
-		}, CYMB_PARSE_MATCH, {
-			.tree = &(CymbTree){
-				.nodes = (CymbNode[]){
-					{
-						.type = CYMB_NODE_TYPE,
-						.typeNode = {.type = CYMB_TYPE_INT},
-						.info = tests[4].tokens.tokens[0].info
-					},
-					{
-						.type = CYMB_NODE_IDENTIFIER,
-						.info = tests[4].tokens.tokens[1].info
-					},
-					{
-						.type = CYMB_NODE_DECLARATION,
-						.info = tests[4].tokens.tokens[1].info
-					}
-				},
-				.count = 3
-			}
-		}, {}, 3},
+		}, CYMB_SUCCESS, {}, {}, 3},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_CONST,
 					.info = {
@@ -2248,33 +2274,9 @@ static void cymbTestStatements(CymbTestContext* const context)
 				}
 			},
 			.count = 6
-		}, CYMB_PARSE_MATCH, {
-			.tree = &(CymbTree){
-				.nodes = (CymbNode[]){
-					{
-						.type = CYMB_NODE_TYPE,
-						.typeNode = {.type = CYMB_TYPE_LONG, .isConst = true},
-						.info = tests[5].tokens.tokens[1].info
-					},
-					{
-						.type = CYMB_NODE_IDENTIFIER,
-						.info = tests[5].tokens.tokens[2].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 1},
-						.info = tests[5].tokens.tokens[4].info
-					},
-					{
-						.type = CYMB_NODE_DECLARATION,
-						.info = tests[5].tokens.tokens[2].info
-					}
-				},
-				.count = 4
-			}
-		}, {}, 6},
+		}, CYMB_SUCCESS, {}, {}, 6},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_WHILE,
 					.info = {
@@ -2432,77 +2434,9 @@ static void cymbTestStatements(CymbTestContext* const context)
 				}
 			},
 			.count = 19
-		}, CYMB_PARSE_MATCH, {
-			.tree = &(CymbTree){
-				.nodes = (CymbNode[]){
-					{
-						.type = CYMB_NODE_IDENTIFIER,
-						.info = tests[6].tokens.tokens[2].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 5},
-						.info = tests[6].tokens.tokens[4].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {.operator = CYMB_BINARY_OPERATOR_GREATER},
-						.info = tests[6].tokens.tokens[3].info
-					},
-					{
-						.type = CYMB_NODE_TYPE,
-						.typeNode = {.type = CYMB_TYPE_INT},
-						.info = tests[6].tokens.tokens[7].info
-					},
-					{
-						.type = CYMB_NODE_IDENTIFIER,
-						.info = tests[6].tokens.tokens[8].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 3},
-						.info = tests[6].tokens.tokens[10].info
-					},
-					{
-						.type = CYMB_NODE_DECLARATION,
-						.info = tests[6].tokens.tokens[8].info
-					},
-					{
-						.type = CYMB_NODE_IDENTIFIER,
-						.info = tests[6].tokens.tokens[12].info
-					},
-					{
-						.type = CYMB_NODE_IDENTIFIER,
-						.info = tests[6].tokens.tokens[14].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 5},
-						.info = tests[6].tokens.tokens[16].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.info = tests[6].tokens.tokens[15].info,
-						.binaryOperatorNode = {.operator = CYMB_BINARY_OPERATOR_ADDITION}
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.info = tests[6].tokens.tokens[13].info,
-						.binaryOperatorNode = {.operator = CYMB_BINARY_OPERATOR_ADDITION_ASSIGNMENT}
-					},
-					{
-						.type = CYMB_NODE_WHILE,
-						.whileNode = {.body = {.count = 2}},
-						.info = tests[6].tokens.tokens[0].info
-					}
-				},
-				.count = 13,
-				.children = (CymbNode*[2]){}
-			},
-			.childCount = 2
-		}, {}, 19},
+		}, CYMB_SUCCESS, {}, {}, 19},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_WHILE,
 					.info = {
@@ -2570,87 +2504,245 @@ static void cymbTestStatements(CymbTestContext* const context)
 				},
 			},
 			.count = 8
-		}, CYMB_PARSE_MATCH, {
-			.tree = &(CymbTree){
-				.nodes = (CymbNode[]){
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 0},
-						.info = tests[7].tokens.tokens[2].info
-					},
-					{
-						.type = CYMB_NODE_RETURN,
-						.returnNode = nullptr,
-						.info = tests[7].tokens.tokens[4].info
-					},
-					{
-						.type = CYMB_NODE_WHILE,
-						.whileNode = {.body = {.count = 1}},
-						.info = tests[7].tokens.tokens[0].info
-					}
-				},
-				.count = 3,
-				.children = (CymbNode*[1]){}
-			},
-			.childCount = 1
-		}, {}, 6}
+		}, CYMB_SUCCESS, {}, {}, 6}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
 
-	tests[3].solution.tree->nodes[2].binaryOperatorNode.leftNode = &tests[3].solution.tree->nodes[0];
-	tests[3].solution.tree->nodes[2].binaryOperatorNode.rightNode = &tests[3].solution.tree->nodes[1];
-	tests[3].solution.tree->nodes[3].returnNode = &tests[3].solution.tree->nodes[2];
+	CymbDiagnostic diagnostics0[] = {
+		{
+			.type = CYMB_EXPECTED_SEMICOLON,
+			.info = tests[0].tokens.tokens[0].info
+		}
+	};
+	tests[0].diagnostics.start = diagnostics0;
 
-	tests[4].solution.tree->nodes[2].declarationNode.type = &tests[4].solution.tree->nodes[0];
-	tests[4].solution.tree->nodes[2].declarationNode.identifier = &tests[4].solution.tree->nodes[1];
+	CymbNode nodes2[] = {
+		{
+			.type = CYMB_NODE_RETURN,
+			.returnNode = nullptr,
+			.info = tests[2].tokens.tokens[0].info
+		}
+	};
+	tests[2].solution.root = nodes2 + 0;
 
-	tests[5].solution.tree->nodes[3].declarationNode.type = &tests[5].solution.tree->nodes[0];
-	tests[5].solution.tree->nodes[3].declarationNode.identifier = &tests[5].solution.tree->nodes[1];
-	tests[5].solution.tree->nodes[3].declarationNode.initializer = &tests[5].solution.tree->nodes[2];
+	CymbNode nodes3[] = {
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 1},
+			.info = tests[3].tokens.tokens[1].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 2},
+			.info = tests[3].tokens.tokens[3].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_ADDITION,
+				.leftNode = &nodes3[0],
+				.rightNode = &nodes3[1]
+			},
+			.info = tests[3].tokens.tokens[2].info
+		},
+		{
+			.type = CYMB_NODE_RETURN,
+			.returnNode = &nodes3[2],
+			.info = tests[3].tokens.tokens[0].info
+		}
+	};
+	tests[3].solution.root = nodes3 + 3;
 
-	tests[6].solution.tree->nodes[2].binaryOperatorNode.leftNode = &tests[6].solution.tree->nodes[0];
-	tests[6].solution.tree->nodes[2].binaryOperatorNode.rightNode = &tests[6].solution.tree->nodes[1];
-	tests[6].solution.tree->nodes[6].declarationNode.type = &tests[6].solution.tree->nodes[3];
-	tests[6].solution.tree->nodes[6].declarationNode.identifier = &tests[6].solution.tree->nodes[4];
-	tests[6].solution.tree->nodes[6].declarationNode.initializer = &tests[6].solution.tree->nodes[5];
-	tests[6].solution.tree->nodes[10].binaryOperatorNode.leftNode = &tests[6].solution.tree->nodes[8];
-	tests[6].solution.tree->nodes[10].binaryOperatorNode.rightNode = &tests[6].solution.tree->nodes[9];
-	tests[6].solution.tree->nodes[11].binaryOperatorNode.leftNode = &tests[6].solution.tree->nodes[7];
-	tests[6].solution.tree->nodes[11].binaryOperatorNode.rightNode = &tests[6].solution.tree->nodes[10];
-	tests[6].solution.tree->nodes[12].whileNode.expression = &tests[6].solution.tree->nodes[2];
-	tests[6].solution.tree->nodes[12].whileNode.body.nodes = tests[6].solution.tree->children;
-	tests[6].solution.tree->children[0] = &tests[6].solution.tree->nodes[6];
-	tests[6].solution.tree->children[1] = &tests[6].solution.tree->nodes[11];
+	CymbNode nodes4[] = {
+		{
+			.type = CYMB_NODE_TYPE,
+			.typeNode = {.type = CYMB_TYPE_INT},
+			.info = tests[4].tokens.tokens[0].info
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[4].tokens.tokens[1].info
+		},
+		{
+			.type = CYMB_NODE_DECLARATION,
+			.declarationNode = {
+				.type = &nodes4[0],
+				.identifier = &nodes4[1]
+			},
+			.info = tests[4].tokens.tokens[1].info
+		}
+	};
+	tests[4].solution.root = nodes4 + 2;
 
-	tests[7].solution.tree->nodes[2].whileNode.expression = &tests[7].solution.tree->nodes[0];
-	tests[7].solution.tree->nodes[2].whileNode.body.nodes = tests[7].solution.tree->children;
-	tests[7].solution.tree->children[0] = &tests[7].solution.tree->nodes[1];
+	CymbNode nodes5[] = {
+		{
+			.type = CYMB_NODE_TYPE,
+			.typeNode = {.type = CYMB_TYPE_LONG, .isConst = true},
+			.info = tests[5].tokens.tokens[1].info
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[5].tokens.tokens[2].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 1},
+			.info = tests[5].tokens.tokens[4].info
+		},
+		{
+			.type = CYMB_NODE_DECLARATION,
+			.declarationNode = {
+				.type = &nodes5[0],
+				.identifier = &nodes5[1],
+				.initializer = &nodes5[2]
+			},
+			.info = tests[5].tokens.tokens[2].info
+		}
+	};
+	tests[5].solution.root = nodes5 + 3;
+
+	CymbNode nodes6[] = {
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[6].tokens.tokens[2].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 5},
+			.info = tests[6].tokens.tokens[4].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_GREATER,
+				.leftNode = &nodes6[0],
+				.rightNode = &nodes6[1]
+			},
+			.info = tests[6].tokens.tokens[3].info
+		},
+		{
+			.type = CYMB_NODE_TYPE,
+			.typeNode = {.type = CYMB_TYPE_INT},
+			.info = tests[6].tokens.tokens[7].info
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[6].tokens.tokens[8].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 3},
+			.info = tests[6].tokens.tokens[10].info
+		},
+		{
+			.type = CYMB_NODE_DECLARATION,
+			.declarationNode = {
+				.type = &nodes6[3],
+				.identifier = &nodes6[4],
+				.initializer = &nodes6[5]
+			},
+			.info = tests[6].tokens.tokens[8].info
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[6].tokens.tokens[12].info
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[6].tokens.tokens[14].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 5},
+			.info = tests[6].tokens.tokens[16].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.info = tests[6].tokens.tokens[15].info,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_ADDITION,
+				.leftNode = &nodes6[8],
+				.rightNode = &nodes6[9]
+			}
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.info = tests[6].tokens.tokens[13].info,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_ADDITION_ASSIGNMENT,
+				.leftNode = &nodes6[7],
+				.rightNode = &nodes6[10]
+			}
+		},
+		{
+			.type = CYMB_NODE_WHILE,
+			.whileNode = {
+				.expression = &nodes6[2]
+			},
+			.info = tests[6].tokens.tokens[0].info
+		}
+	};
+	CymbNodeChild children6[] = {
+		{
+			.node = &nodes6[6],
+			.next = &children6[1]
+		},
+		{
+			.node = &nodes6[11]
+		}
+	};
+	nodes6[12].whileNode.body = children6 + 0;
+	tests[6].solution.root = nodes6 + 12;
+
+	CymbNode nodes7[] = {
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 0},
+			.info = tests[7].tokens.tokens[2].info
+		},
+		{
+			.type = CYMB_NODE_RETURN,
+			.returnNode = nullptr,
+			.info = tests[7].tokens.tokens[4].info
+		},
+		{
+			.type = CYMB_NODE_WHILE,
+			.whileNode = {
+				.expression = &nodes7[0]
+			},
+			.info = tests[7].tokens.tokens[0].info
+		}
+	};
+	CymbNodeChild children7[] = {
+		{
+			.node = &nodes7[1]
+		}
+	};
+	nodes7[2].whileNode.body = children7 + 0;
+	tests[7].solution.root = nodes7 + 2;
 
 	for(size_t testIndex = 0; testIndex < testCount; ++testIndex)
 	{
-		snprintf(buffer, sizeof(buffer), format, __func__, testIndex);
+		cymbContextSetIndex(context, testIndex);
 
 		cymbDoTreeTest(&tests[testIndex], cymbParseStatement, context);
 	}
 
-	--context->stringCount;
+	cymbContextPop(context);
 }
 
 static void cymbTestFunctions(CymbTestContext* const context)
 {
-	const char* const format = "%s #%zu";
-	char buffer[32];
-	context->strings[context->stringCount] = buffer;
-	++context->stringCount;
+	cymbContextPush(context, __func__);
 
 	const CymbConstString test0String = CYMB_STRING("int some_func(void){return 1 + 2; return; return 0;}");
 	const CymbConstString test1String = CYMB_STRING("const float* some_other_func(){}");
 	const CymbConstString test2String = CYMB_STRING("int func(){const int a = 1; return a + 2;};");
 	const CymbConstString test3String = CYMB_STRING("void add(const int* const a, float b){return;}");
 
-	const CymbTreeTest tests[] = {
+	CymbTreeTest tests[] = {
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_INT,
 					.info = {
@@ -2792,69 +2884,9 @@ static void cymbTestFunctions(CymbTestContext* const context)
 				}
 			},
 			.count = 17
-		}, CYMB_PARSE_MATCH, {
-			.tree = &(CymbTree){
-				.nodes = (CymbNode[]){
-					{
-						.type = CYMB_NODE_TYPE,
-						.typeNode = {.type = CYMB_TYPE_INT},
-						.info = tests[0].tokens.tokens[0].info
-					},
-					{
-						.type = CYMB_NODE_FUNCTION_TYPE,
-						.functionTypeNode = {},
-						.info = tests[0].tokens.tokens[0].info
-					},
-					{
-						.type = CYMB_NODE_IDENTIFIER,
-						.info = tests[0].tokens.tokens[1].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 1},
-						.info = tests[0].tokens.tokens[7].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 2},
-						.info = tests[0].tokens.tokens[9].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {.operator = CYMB_BINARY_OPERATOR_ADDITION},
-						.info = tests[0].tokens.tokens[8].info
-					},
-					{
-						.type = CYMB_NODE_RETURN,
-						.info = tests[0].tokens.tokens[6].info
-					},
-					{
-						.type = CYMB_NODE_RETURN,
-						.returnNode = nullptr,
-						.info = tests[0].tokens.tokens[11].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 0},
-						.info = tests[0].tokens.tokens[14].info
-					},
-					{
-						.type = CYMB_NODE_RETURN,
-						.info = tests[0].tokens.tokens[13].info
-					},
-					{
-						.type = CYMB_NODE_FUNCTION,
-						.functionNode = {.statements = {.count = 3}},
-						.info = tests[0].tokens.tokens[1].info
-					}
-				},
-				.count = 11,
-				.children = (CymbNode*[3]){}
-			},
-			.childCount = 3
-		}, {}, 17},
+		}, CYMB_SUCCESS, {}, {}, 17},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_CONST,
 					.info = {
@@ -2921,39 +2953,9 @@ static void cymbTestFunctions(CymbTestContext* const context)
 				}
 			},
 			.count = 8
-		}, CYMB_PARSE_MATCH, {
-			.tree = &(CymbTree){
-				.nodes = (CymbNode[]){
-					{
-						.type = CYMB_NODE_TYPE,
-						.typeNode = {.type = CYMB_TYPE_FLOAT, .isConst = true},
-						.info = tests[1].tokens.tokens[1].info
-					},
-					{
-						.type = CYMB_NODE_POINTER,
-						.pointerNode = {},
-						.info = tests[1].tokens.tokens[2].info
-					},
-					{
-						.type = CYMB_NODE_FUNCTION_TYPE,
-						.functionTypeNode = {},
-						.info = tests[1].tokens.tokens[2].info
-					},
-					{
-						.type = CYMB_NODE_IDENTIFIER,
-						.info = tests[1].tokens.tokens[3].info
-					},
-					{
-						.type = CYMB_NODE_FUNCTION,
-						.functionNode = {},
-						.info = tests[1].tokens.tokens[3].info
-					}
-				},
-				.count = 5
-			}
-		}, {}, 8},
+		}, CYMB_SUCCESS, {}, {}, 8},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_INT,
 					.info = {
@@ -3102,72 +3104,9 @@ static void cymbTestFunctions(CymbTestContext* const context)
 				}
 			},
 			.count = 18
-		}, CYMB_PARSE_MATCH, {
-			.tree = &(CymbTree){
-				.nodes = (CymbNode[]){
-					{
-						.type = CYMB_NODE_TYPE,
-						.typeNode = {.type = CYMB_TYPE_INT},
-						.info = tests[2].tokens.tokens[0].info
-					},
-					{
-						.type = CYMB_NODE_FUNCTION_TYPE,
-						.functionTypeNode = {},
-						.info = tests[2].tokens.tokens[0].info
-					},
-					{
-						.type = CYMB_NODE_IDENTIFIER,
-						.info = tests[2].tokens.tokens[1].info
-					},
-					{
-						.type = CYMB_NODE_TYPE,
-						.typeNode = {.type = CYMB_TYPE_INT, .isConst = true},
-						.info = tests[2].tokens.tokens[6].info
-					},
-					{
-						.type = CYMB_NODE_IDENTIFIER,
-						.info = tests[2].tokens.tokens[7].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 1},
-						.info = tests[2].tokens.tokens[9].info
-					},
-					{
-						.type = CYMB_NODE_DECLARATION,
-						.info = tests[2].tokens.tokens[7].info
-					},
-					{
-						.type = CYMB_NODE_IDENTIFIER,
-						.info = tests[2].tokens.tokens[12].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 2},
-						.info = tests[2].tokens.tokens[14].info
-					},
-					{
-						.type = CYMB_NODE_BINARY_OPERATOR,
-						.binaryOperatorNode = {.operator = CYMB_BINARY_OPERATOR_ADDITION},
-						.info = tests[2].tokens.tokens[13].info
-					},
-					{
-						.type = CYMB_NODE_RETURN,
-						.info = tests[2].tokens.tokens[11].info
-					},
-					{
-						.type = CYMB_NODE_FUNCTION,
-						.functionNode = {.statements = {.count = 2}},
-						.info = tests[2].tokens.tokens[1].info
-					}
-				},
-				.count = 12,
-				.children = (CymbNode*[2]){}
-			},
-			.childCount = 2
-		}, {}, 17},
+		}, CYMB_SUCCESS, {}, {}, 17},
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_VOID,
 					.info = {
@@ -3298,130 +3237,307 @@ static void cymbTestFunctions(CymbTestContext* const context)
 				}
 			},
 			.count = 16
-		}, CYMB_PARSE_MATCH, {
-			.tree = &(CymbTree){
-				.nodes = (CymbNode[]){
-					{
-						.type = CYMB_NODE_TYPE,
-						.typeNode = {.type = CYMB_TYPE_VOID},
-						.info = tests[3].tokens.tokens[0].info
-					},
-					{
-						.type = CYMB_NODE_TYPE,
-						.typeNode = {.type = CYMB_TYPE_INT, .isConst = true},
-						.info = tests[3].tokens.tokens[4].info
-					},
-					{
-						.type = CYMB_NODE_POINTER,
-						.pointerNode = {.isConst = true},
-						.info = tests[3].tokens.tokens[5].info
-					},
-					{
-						.type = CYMB_NODE_IDENTIFIER,
-						.info = tests[3].tokens.tokens[7].info
-					},
-					{
-						.type = CYMB_NODE_TYPE,
-						.typeNode = {.type = CYMB_TYPE_FLOAT},
-						.info = tests[3].tokens.tokens[9].info
-					},
-					{
-						.type = CYMB_NODE_IDENTIFIER,
-						.info = tests[3].tokens.tokens[10].info
-					},
-					{
-						.type = CYMB_NODE_FUNCTION_TYPE,
-						.functionTypeNode = {.parameterTypes = {.count = 2}},
-						.info = tests[3].tokens.tokens[0].info
-					},
-					{
-						.type = CYMB_NODE_IDENTIFIER,
-						.info = tests[3].tokens.tokens[1].info
-					},
-					{
-						.type = CYMB_NODE_RETURN,
-						.returnNode = nullptr,
-						.info = tests[3].tokens.tokens[13].info
-					},
-					{
-						.type = CYMB_NODE_FUNCTION,
-						.functionNode = {.parameters = {.count = 2}, .statements = {.count = 1}},
-						.info = tests[3].tokens.tokens[1].info
-					},
-				},
-				.count = 10,
-				.children = (CymbNode*[5]){}
-			},
-			.childCount = 5
-		}, {}, 16}
+		}, CYMB_SUCCESS, {}, {}, 16}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
 
-	tests[0].solution.tree->nodes[1].functionTypeNode.returnType = &tests[0].solution.tree->nodes[0];
-	tests[0].solution.tree->nodes[5].binaryOperatorNode.leftNode = &tests[0].solution.tree->nodes[3];
-	tests[0].solution.tree->nodes[5].binaryOperatorNode.rightNode = &tests[0].solution.tree->nodes[4];
-	tests[0].solution.tree->nodes[6].returnNode = &tests[0].solution.tree->nodes[5];
-	tests[0].solution.tree->nodes[9].returnNode = &tests[0].solution.tree->nodes[8];
-	tests[0].solution.tree->nodes[10].functionNode.name = &tests[0].solution.tree->nodes[2];
-	tests[0].solution.tree->nodes[10].functionNode.type = &tests[0].solution.tree->nodes[1];
-	tests[0].solution.tree->nodes[10].functionNode.statements.nodes = &tests[0].solution.tree->children[0];
-	tests[0].solution.tree->children[0] = tests[0].solution.tree->nodes + 6;
-	tests[0].solution.tree->children[1] = tests[0].solution.tree->nodes + 7;
-	tests[0].solution.tree->children[2] = tests[0].solution.tree->nodes + 9;
+	CymbNode nodes0[] = {
+		{
+			.type = CYMB_NODE_TYPE,
+			.typeNode = {.type = CYMB_TYPE_INT},
+			.info = tests[0].tokens.tokens[0].info
+		},
+		{
+			.type = CYMB_NODE_FUNCTION_TYPE,
+			.functionTypeNode = {
+				.returnType = &nodes0[0]
+			},
+			.info = tests[0].tokens.tokens[0].info
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[0].tokens.tokens[1].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 1},
+			.info = tests[0].tokens.tokens[7].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 2},
+			.info = tests[0].tokens.tokens[9].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_ADDITION,
+				.leftNode = &nodes0[3],
+				.rightNode = &nodes0[4]
+			},
+			.info = tests[0].tokens.tokens[8].info
+		},
+		{
+			.type = CYMB_NODE_RETURN,
+			.returnNode = &nodes0[5],
+			.info = tests[0].tokens.tokens[6].info
+		},
+		{
+			.type = CYMB_NODE_RETURN,
+			.returnNode = nullptr,
+			.info = tests[0].tokens.tokens[11].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 0},
+			.info = tests[0].tokens.tokens[14].info
+		},
+		{
+			.type = CYMB_NODE_RETURN,
+			.returnNode = &nodes0[8],
+			.info = tests[0].tokens.tokens[13].info
+		},
+		{
+			.type = CYMB_NODE_FUNCTION,
+			.functionNode = {
+				.type = &nodes0[1],
+				.name = &nodes0[2]
+			},
+			.info = tests[0].tokens.tokens[1].info
+		}
+	};
+	CymbNodeChild children0[] = {
+		{
+			.node = &nodes0[6],
+			.next = &children0[1]
+		},
+		{
+			.node = &nodes0[7],
+			.next = &children0[2]
+		},
+		{
+			.node = &nodes0[9]
+		}
+	};
+	nodes0[10].functionNode.statements = children0 + 0;
+	tests[0].solution.root = nodes0 + 10;
 
-	tests[1].solution.tree->nodes[1].pointerNode.pointedNode = &tests[1].solution.tree->nodes[0];
-	tests[1].solution.tree->nodes[2].functionTypeNode.returnType = &tests[1].solution.tree->nodes[1];
-	tests[1].solution.tree->nodes[4].functionNode.type = &tests[1].solution.tree->nodes[2];
-	tests[1].solution.tree->nodes[4].functionNode.name = &tests[1].solution.tree->nodes[3];
+	CymbNode nodes1[] = {
+		{
+			.type = CYMB_NODE_TYPE,
+			.typeNode = {.type = CYMB_TYPE_FLOAT, .isConst = true},
+			.info = tests[1].tokens.tokens[1].info
+		},
+		{
+			.type = CYMB_NODE_POINTER,
+			.pointerNode = {
+				.pointedNode = &nodes1[0]
+			},
+			.info = tests[1].tokens.tokens[2].info
+		},
+		{
+			.type = CYMB_NODE_FUNCTION_TYPE,
+			.functionTypeNode = {
+				.returnType = &nodes1[1]
+			},
+			.info = tests[1].tokens.tokens[2].info
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[1].tokens.tokens[3].info
+		},
+		{
+			.type = CYMB_NODE_FUNCTION,
+			.functionNode = {
+				.type = &nodes1[2],
+				.name = &nodes1[3]
+			},
+			.info = tests[1].tokens.tokens[3].info
+		}
+	};
+	tests[1].solution.root = nodes1 + 4;
 
-	tests[2].solution.tree->nodes[1].functionTypeNode.returnType = &tests[2].solution.tree->nodes[0];
-	tests[2].solution.tree->nodes[6].declarationNode.type = &tests[2].solution.tree->nodes[3];
-	tests[2].solution.tree->nodes[6].declarationNode.identifier = &tests[2].solution.tree->nodes[4];
-	tests[2].solution.tree->nodes[6].declarationNode.initializer = &tests[2].solution.tree->nodes[5];
-	tests[2].solution.tree->nodes[9].binaryOperatorNode.leftNode = &tests[2].solution.tree->nodes[7];
-	tests[2].solution.tree->nodes[9].binaryOperatorNode.rightNode = &tests[2].solution.tree->nodes[8];
-	tests[2].solution.tree->nodes[10].returnNode = &tests[2].solution.tree->nodes[9];
-	tests[2].solution.tree->nodes[11].functionNode.type = &tests[2].solution.tree->nodes[1];
-	tests[2].solution.tree->nodes[11].functionNode.name = &tests[2].solution.tree->nodes[2];
-	tests[2].solution.tree->nodes[11].functionNode.statements.nodes = &tests[2].solution.tree->children[0];
-	tests[2].solution.tree->children[0] = tests[2].solution.tree->nodes + 6;
-	tests[2].solution.tree->children[1] = tests[2].solution.tree->nodes + 10;
+	CymbNode nodes2[] = {
+		{
+			.type = CYMB_NODE_TYPE,
+			.typeNode = {.type = CYMB_TYPE_INT},
+			.info = tests[2].tokens.tokens[0].info
+		},
+		{
+			.type = CYMB_NODE_FUNCTION_TYPE,
+			.functionTypeNode = {
+				.returnType = &nodes2[0]
+			},
+			.info = tests[2].tokens.tokens[0].info
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[2].tokens.tokens[1].info
+		},
+		{
+			.type = CYMB_NODE_TYPE,
+			.typeNode = {.type = CYMB_TYPE_INT, .isConst = true},
+			.info = tests[2].tokens.tokens[6].info
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[2].tokens.tokens[7].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 1},
+			.info = tests[2].tokens.tokens[9].info
+		},
+		{
+			.type = CYMB_NODE_DECLARATION,
+			.declarationNode = {
+				.type = &nodes2[3],
+				.identifier = &nodes2[4],
+				.initializer = &nodes2[5]
+			},
+			.info = tests[2].tokens.tokens[7].info
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[2].tokens.tokens[12].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 2},
+			.info = tests[2].tokens.tokens[14].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_ADDITION,
+				.leftNode = &nodes2[7],
+				.rightNode = &nodes2[8]
+			},
+			.info = tests[2].tokens.tokens[13].info
+		},
+		{
+			.type = CYMB_NODE_RETURN,
+			.returnNode = &nodes2[9],
+			.info = tests[2].tokens.tokens[11].info
+		},
+		{
+			.type = CYMB_NODE_FUNCTION,
+			.functionNode = {
+				.type = &nodes2[1],
+				.name = &nodes2[2]
+			},
+			.info = tests[2].tokens.tokens[1].info
+		}
+	};
+	CymbNodeChild children2[] = {
+		{
+			.node = &nodes2[6],
+			.next = &children2[1]
+		},
+		{
+			.node = &nodes2[10]
+		}
+	};
+	nodes2[11].functionNode.statements = children2 + 0;
+	tests[2].solution.root = nodes2 + 11;
 
-	tests[3].solution.tree->nodes[2].pointerNode.pointedNode = &tests[3].solution.tree->nodes[1];
-	tests[3].solution.tree->nodes[6].functionTypeNode.returnType = &tests[3].solution.tree->nodes[0];
-	tests[3].solution.tree->nodes[6].functionTypeNode.parameterTypes.nodes = &tests[3].solution.tree->children[0];
-	tests[3].solution.tree->nodes[9].functionNode.type = &tests[3].solution.tree->nodes[6];
-	tests[3].solution.tree->nodes[9].functionNode.name = &tests[3].solution.tree->nodes[7];
-	tests[3].solution.tree->nodes[9].functionNode.parameters.nodes = &tests[3].solution.tree->children[2];
-	tests[3].solution.tree->nodes[9].functionNode.statements.nodes = &tests[3].solution.tree->children[4];
-	tests[3].solution.tree->children[0] = tests[3].solution.tree->nodes + 2;
-	tests[3].solution.tree->children[1] = tests[3].solution.tree->nodes + 4;
-	tests[3].solution.tree->children[2] = tests[3].solution.tree->nodes + 3;
-	tests[3].solution.tree->children[3] = tests[3].solution.tree->nodes + 5;
-	tests[3].solution.tree->children[4] = tests[3].solution.tree->nodes + 8;
+	CymbNode nodes3[] = {
+		{
+			.type = CYMB_NODE_TYPE,
+			.typeNode = {.type = CYMB_TYPE_VOID},
+			.info = tests[3].tokens.tokens[0].info
+		},
+		{
+			.type = CYMB_NODE_TYPE,
+			.typeNode = {.type = CYMB_TYPE_INT, .isConst = true},
+			.info = tests[3].tokens.tokens[4].info
+		},
+		{
+			.type = CYMB_NODE_POINTER,
+			.pointerNode = {.pointedNode = &nodes3[1], .isConst = true},
+			.info = tests[3].tokens.tokens[5].info
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[3].tokens.tokens[7].info
+		},
+		{
+			.type = CYMB_NODE_TYPE,
+			.typeNode = {.type = CYMB_TYPE_FLOAT},
+			.info = tests[3].tokens.tokens[9].info
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[3].tokens.tokens[10].info
+		},
+		{
+			.type = CYMB_NODE_FUNCTION_TYPE,
+			.functionTypeNode = {
+				.returnType = &nodes3[0]
+			},
+			.info = tests[3].tokens.tokens[0].info
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[3].tokens.tokens[1].info
+		},
+		{
+			.type = CYMB_NODE_RETURN,
+			.returnNode = nullptr,
+			.info = tests[3].tokens.tokens[13].info
+		},
+		{
+			.type = CYMB_NODE_FUNCTION,
+			.functionNode = {
+				.type = &nodes3[6],
+				.name = &nodes3[7]
+			},
+			.info = tests[3].tokens.tokens[1].info
+		}
+	};
+	CymbNodeChild children3[] = {
+		{
+			.node = &nodes3[2],
+			.next = &children3[1]
+		},
+		{
+			.node = &nodes3[4]
+		},
+		{
+			.node = &nodes3[3],
+			.next = &children3[3]
+		},
+		{
+			.node = &nodes3[5]
+		},
+		{
+			.node = &nodes3[8]
+		}
+	};
+	nodes3[6].functionTypeNode.parameterTypes = children3 + 0;
+	nodes3[9].functionNode.parameters = children3 + 2;
+	nodes3[9].functionNode.statements = children3 + 4;
+	tests[3].solution.root = nodes3 + 9;
 
 	for(size_t testIndex = 0; testIndex < testCount; ++testIndex)
 	{
-		snprintf(buffer, sizeof(buffer), format, __func__, testIndex);
+		cymbContextSetIndex(context, testIndex);
 
 		cymbDoTreeTest(&tests[testIndex], cymbParseFunction, context);
 	}
 
-	--context->stringCount;
+	cymbContextPop(context);
 }
 
 static void cymbTestProgram(CymbTestContext* const context)
 {
-	const char* const format = "%s #%zu";
-	char buffer[32];
-	context->strings[context->stringCount] = buffer;
-	++context->stringCount;
+	cymbContextPush(context, __func__);
 
 	const CymbConstString test0String = CYMB_STRING("int some_func(){return 1;} int main(void){return 0;}");
 
-	const CymbTreeTest tests[] = {
+	CymbTreeTest tests[] = {
 		{{
-			.tokens = (const CymbToken[]){
+			.tokens = (CymbToken[]){
 				{
 					.type = CYMB_TOKEN_INT,
 					.info = {
@@ -3578,102 +3694,112 @@ static void cymbTestProgram(CymbTestContext* const context)
 				}
 			},
 			.count = 19
-		}, CYMB_PARSE_MATCH, {
-			.tree = &(CymbTree){
-				.nodes = (CymbNode[]){
-					{
-						.type = CYMB_NODE_TYPE,
-						.typeNode = {.type = CYMB_TYPE_INT},
-						.info = tests[0].tokens.tokens[0].info
-					},
-					{
-						.type = CYMB_NODE_FUNCTION_TYPE,
-						.functionTypeNode = {},
-						.info = tests[0].tokens.tokens[0].info
-					},
-					{
-						.type = CYMB_NODE_IDENTIFIER,
-						.info = tests[0].tokens.tokens[1].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 1},
-						.info = tests[0].tokens.tokens[6].info
-					},
-					{
-						.type = CYMB_NODE_RETURN,
-						.info = tests[0].tokens.tokens[5].info
-					},
-					{
-						.type = CYMB_NODE_FUNCTION,
-						.functionNode = {.statements = {.count = 1}},
-						.info = tests[0].tokens.tokens[1].info
-					},
-					{
-						.type = CYMB_NODE_TYPE,
-						.typeNode = {.type = CYMB_TYPE_INT},
-						.info = tests[0].tokens.tokens[9].info
-					},
-					{
-						.type = CYMB_NODE_FUNCTION_TYPE,
-						.functionTypeNode = {},
-						.info = tests[0].tokens.tokens[9].info
-					},
-					{
-						.type = CYMB_NODE_IDENTIFIER,
-						.info = tests[0].tokens.tokens[10].info
-					},
-					{
-						.type = CYMB_NODE_CONSTANT,
-						.constantNode = {CYMB_CONSTANT_INT, 0},
-						.info = tests[0].tokens.tokens[16].info
-					},
-					{
-						.type = CYMB_NODE_RETURN,
-						.info = tests[0].tokens.tokens[15].info
-					},
-					{
-						.type = CYMB_NODE_FUNCTION,
-						.functionNode = {.statements = {.count = 1}},
-						.info = tests[0].tokens.tokens[10].info
-					},
-					{
-						.type = CYMB_NODE_PROGRAM,
-						.programNode = {.children = {.count = 2}}
-					}
-				},
-				.count = 13,
-				.children = (CymbNode*[4]){}
-			},
-			.childCount = 4
-		}, {}, 19}
+		}, CYMB_SUCCESS, {}, {}, 19}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
 
-	tests[0].solution.tree->nodes[1].functionTypeNode.returnType = &tests[0].solution.tree->nodes[0];
-	tests[0].solution.tree->nodes[4].returnNode = &tests[0].solution.tree->nodes[3];
-	tests[0].solution.tree->nodes[5].functionNode.type = &tests[0].solution.tree->nodes[1];
-	tests[0].solution.tree->nodes[5].functionNode.name = &tests[0].solution.tree->nodes[2];
-	tests[0].solution.tree->nodes[5].functionNode.statements.nodes = &tests[0].solution.tree->children[0];
-	tests[0].solution.tree->nodes[7].functionTypeNode.returnType = &tests[0].solution.tree->nodes[6];
-	tests[0].solution.tree->nodes[10].returnNode = &tests[0].solution.tree->nodes[9];
-	tests[0].solution.tree->nodes[11].functionNode.type = &tests[0].solution.tree->nodes[7];
-	tests[0].solution.tree->nodes[11].functionNode.name = &tests[0].solution.tree->nodes[8];
-	tests[0].solution.tree->nodes[11].functionNode.statements.nodes = &tests[0].solution.tree->children[1];
-	tests[0].solution.tree->nodes[12].programNode.children.nodes = &tests[0].solution.tree->children[2];
-	tests[0].solution.tree->children[0] = tests[0].solution.tree->nodes + 4;
-	tests[0].solution.tree->children[1] = tests[0].solution.tree->nodes + 10;
-	tests[0].solution.tree->children[2] = tests[0].solution.tree->nodes + 5;
-	tests[0].solution.tree->children[3] = tests[0].solution.tree->nodes + 11;
+	CymbNode nodes0[] = {
+		{
+			.type = CYMB_NODE_TYPE,
+			.typeNode = {.type = CYMB_TYPE_INT},
+			.info = tests[0].tokens.tokens[0].info
+		},
+		{
+			.type = CYMB_NODE_FUNCTION_TYPE,
+			.functionTypeNode = {
+				.returnType = &nodes0[0]
+			},
+			.info = tests[0].tokens.tokens[0].info
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[0].tokens.tokens[1].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 1},
+			.info = tests[0].tokens.tokens[6].info
+		},
+		{
+			.type = CYMB_NODE_RETURN,
+			.returnNode = &nodes0[3],
+			.info = tests[0].tokens.tokens[5].info
+		},
+		{
+			.type = CYMB_NODE_FUNCTION,
+			.functionNode = {
+				.type = &nodes0[1],
+				.name = &nodes0[2]
+			},
+			.info = tests[0].tokens.tokens[1].info
+		},
+		{
+			.type = CYMB_NODE_TYPE,
+			.typeNode = {.type = CYMB_TYPE_INT},
+			.info = tests[0].tokens.tokens[9].info
+		},
+		{
+			.type = CYMB_NODE_FUNCTION_TYPE,
+			.functionTypeNode = {
+				.returnType = &nodes0[6]
+			},
+			.info = tests[0].tokens.tokens[9].info
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[0].tokens.tokens[10].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = {CYMB_CONSTANT_INT, 0},
+			.info = tests[0].tokens.tokens[16].info
+		},
+		{
+			.type = CYMB_NODE_RETURN,
+			.returnNode = &nodes0[9],
+			.info = tests[0].tokens.tokens[15].info
+		},
+		{
+			.type = CYMB_NODE_FUNCTION,
+			.functionNode = {
+				.type = &nodes0[7],
+				.name = &nodes0[8]
+			},
+			.info = tests[0].tokens.tokens[10].info
+		},
+		{
+			.type = CYMB_NODE_PROGRAM,
+			.programNode = {}
+		}
+	};
+	CymbNodeChild children0[] = {
+		{
+			.node = &nodes0[4]
+		},
+		{
+			.node = &nodes0[10]
+		},
+		{
+			.node = &nodes0[5],
+			.next = &children0[3]
+		},
+		{
+			.node = &nodes0[11]
+		}
+	};
+	nodes0[5].functionNode.statements = children0 + 0;
+	nodes0[11].functionNode.statements = children0 + 1;
+	nodes0[12].programNode.children = children0 + 2;
+	tests[0].solution.root = nodes0 + 12;
 
 	for(size_t testIndex = 0; testIndex < testCount; ++testIndex)
 	{
-		snprintf(buffer, sizeof(buffer), format, __func__, testIndex);
+		cymbContextSetIndex(context, testIndex);
 
 		cymbDoTreeTest(&tests[testIndex], cymbParseProgram, context);
 	}
 
-	--context->stringCount;
+	cymbContextPop(context);
 }
 
 void cymbTestTrees(CymbTestContext* const context)

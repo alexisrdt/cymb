@@ -1,20 +1,72 @@
 #include <limits.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "cymb/memory.h"
 #include "cymb/options.h"
 #include "test.h"
 
+void cymbContextPush(CymbTestContext* const context, const char* const string)
+{
+	CymbTestNode* const node = cymbArenaGet(&context->arena, sizeof(*node), alignof(typeof(*node)));
+	if(!node)
+	{
+		context->passed = false;
+		return;
+	}
+
+	*node = (CymbTestNode){
+		.previous = context->lastNode,
+		.save = cymbArenaSave(&context->arena),
+		.string = string
+	};
+
+	if(context->lastNode)
+	{
+		context->lastNode->next = node;
+	}
+	context->lastNode = node;
+	if(!context->firstNode)
+	{
+		context->firstNode = node;
+	}
+}
+
+void cymbContextPop(CymbTestContext* const context)
+{
+	const CymbArenaSave save = context->lastNode->save;
+
+	if(context->firstNode == context->lastNode)
+	{
+		context->firstNode = nullptr;
+	}
+	context->lastNode = context->lastNode->previous;
+	if(context->lastNode)
+	{
+		context->lastNode->next = nullptr;
+	}
+
+	cymbArenaRestore(&context->arena, save);
+}
+
+void cymbContextSetIndex(CymbTestContext* const context, const size_t index)
+{
+	context->lastNode->index = index;
+}
+
 void cymbFail(CymbTestContext* const context, const char* const string)
 {
 	context->passed = false;
 
-	for(size_t stringIndex = 0; stringIndex < context->stringCount; ++stringIndex)
+	const CymbTestNode* node = context->firstNode;
+	while(node)
 	{
-		fputs(context->strings[stringIndex], stderr);
-		fputc(stringIndex == context->stringCount - 1 ? ':' : ',', stderr);
+		fprintf(stderr, "%s #%zu", node->string, node->index);
+		fputc(node == context->lastNode ? ':' : ',', stderr);
 		fputc(' ', stderr);
+
+		node = node->next;
 	}
 
 	fputs(string, stderr);
@@ -23,10 +75,7 @@ void cymbFail(CymbTestContext* const context, const char* const string)
 
 static void cymbTestTab(CymbTestContext* const context)
 {
-	const char* const format = "%s #%zu";
-	char buffer[32];
-	context->strings[context->stringCount] = buffer;
-	++context->stringCount;
+	cymbContextPush(context, __func__);
 
 	const struct
 	{
@@ -52,15 +101,16 @@ static void cymbTestTab(CymbTestContext* const context)
 
 	for(size_t testIndex = 0; testIndex < testCount; ++testIndex)
 	{
+		cymbContextSetIndex(context, testIndex);
+
 		const size_t result = cymbNextTab(tests[testIndex].column, tests[testIndex].tabWidth);
 		if(result != tests[testIndex].solution)
 		{
-			snprintf(buffer, sizeof(buffer), format, __func__, testIndex);
 			cymbFail(context, "Wrong result.");
 		}
 	}
 
-	--context->stringCount;
+	cymbContextPop(context);
 }
 
 static int cymbCompareInts(const void* const firstVoid, const void* const secondVoid)
@@ -73,10 +123,7 @@ static int cymbCompareInts(const void* const firstVoid, const void* const second
 
 static void cymbTestFind(CymbTestContext* const context)
 {
-	const char* const format = "%s #%zu";
-	char buffer[32];
-	context->strings[context->stringCount] = buffer;
-	++context->stringCount;
+	cymbContextPush(context, __func__);
 
 	constexpr int array[] = {1, 2, 3, 4, 5, 10, INT_MAX};
 	constexpr size_t elementCount = CYMB_LENGTH(array);
@@ -86,52 +133,50 @@ static void cymbTestFind(CymbTestContext* const context)
 
 	for(size_t index = 0; index < elementCount; ++index)
 	{
+		cymbContextSetIndex(context, index);
+
 		result = cymbFind(&array[index], array, elementCount, elementSize, cymbCompareInts);
 		if(result != &array[index])
 		{
-			snprintf(buffer, sizeof(buffer), format, __func__, index);
 			cymbFail(context, "Wrong result.");
 		}
 	}
 
+	cymbContextSetIndex(context, elementCount);
 	result = cymbFind(&(const int){8}, array, elementCount, elementSize, cymbCompareInts);
 	if(result != nullptr)
 	{
-		snprintf(buffer, sizeof(buffer), format, __func__, elementCount + 0);
 		cymbFail(context, "Wrong result.");
 	}
 
+	cymbContextSetIndex(context, elementCount + 1);
 	result = cymbFind(&(const int){INT_MIN}, array, elementCount, elementSize, cymbCompareInts);
 	if(result != nullptr)
 	{
-		snprintf(buffer, sizeof(buffer), format, __func__, elementCount + 1);
 		cymbFail(context, "Wrong result.");
 	}
 
+	cymbContextSetIndex(context, elementCount + 2);
 	result = cymbFind(&array[0], array, 0, elementSize, cymbCompareInts);
 	if(result != nullptr)
 	{
-		snprintf(buffer, sizeof(buffer), format, __func__, elementCount + 2);
 		cymbFail(context, "Wrong result.");
 	}
 
-	--context->stringCount;
+	cymbContextPop(context);
 }
 
 static void cymbTestArguments(CymbTestContext* const context)
 {
-	const char* const format = "%s #%zu";
-	char buffer[32];
-	context->strings[context->stringCount] = buffer;
-	++context->stringCount;
+	cymbContextPush(context, __func__);
 
-	const struct
+	struct
 	{
 		const CymbConstString* arguments;
 		size_t argumentCount;
 		CymbResult result;
 		CymbOptions options;
-		CymbConstDiagnosticList diagnostics;
+		CymbDiagnosticList diagnostics;
 	} tests[] = {
 		{(const CymbConstString[]){
 			CYMB_STRING("main.c")
@@ -159,34 +204,11 @@ static void cymbTestArguments(CymbTestContext* const context)
 		}, {}},
 		{(const CymbConstString[]){
 			CYMB_STRING("--output")
-		}, 1, CYMB_ERROR_INVALID_ARGUMENT, {}, {
-			.diagnostics = (CymbDiagnostic[]){
-				{
-					.type = CYMB_MISSING_ARGUMENT,
-					.info = {
-						.hint = {tests[2].arguments[0].string + 2, tests[2].arguments[0].length - 2}
-					}
-				},
-				{
-					.type = CYMB_MISSING_ARGUMENT
-				}
-			},
-			.count = 2
-		}},
+		}, 1, CYMB_INVALID, {}, {}},
 		{(const CymbConstString[]){
 			CYMB_STRING("main.c"),
 			CYMB_STRING("--some-option")
-		}, 2, CYMB_ERROR_INVALID_ARGUMENT, {}, {
-			.diagnostics = (CymbDiagnostic[]){
-				{
-					.type = CYMB_UNKNOWN_OPTION,
-					.info = {
-						.hint = {tests[3].arguments[1].string + 2, tests[3].arguments[1].length - 2}
-					}
-				}
-			},
-			.count = 1
-		}},
+		}, 2, CYMB_INVALID, {}, {}},
 		{(const CymbConstString[]){
 			CYMB_STRING("--standard"),
 			CYMB_STRING("c11"),
@@ -215,15 +237,47 @@ static void cymbTestArguments(CymbTestContext* const context)
 			.inputCount = 3,
 			.tabWidth = 1,
 			.standard = CYMB_C23
-		}, {}}
+		}, {}},
+		{nullptr, 0, CYMB_INVALID, {}, {}}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
 
+	CymbDiagnostic diagnostics2[] = {
+		{
+			.type = CYMB_MISSING_ARGUMENT,
+			.info = {
+				.hint = {tests[2].arguments[0].string + 2, tests[2].arguments[0].length - 2}
+			},
+			.next = diagnostics2 + 1
+		},
+		{
+			.type = CYMB_MISSING_ARGUMENT
+		}
+	};
+	tests[2].diagnostics.start = diagnostics2;
+
+	CymbDiagnostic diagnostics3[] = {
+		{
+			.type = CYMB_UNKNOWN_OPTION,
+			.info = {
+				.hint = {tests[3].arguments[1].string + 2, tests[3].arguments[1].length - 2}
+			}
+		}
+	};
+	tests[3].diagnostics.start = diagnostics3;
+
+	CymbDiagnostic diagnostics6[] = {
+		{
+			.type = CYMB_MISSING_ARGUMENT
+		}
+	};
+	tests[6].diagnostics.start = diagnostics6;
+
+	const CymbArenaSave save = cymbArenaSave(&context->arena);
+
 	for(size_t testIndex = 0; testIndex < testCount; ++testIndex)
 	{
-		snprintf(buffer, sizeof(buffer), format, __func__, testIndex);
-
-		context->diagnostics.count = 0;
+		cymbContextSetIndex(context, testIndex);
 
 		CymbOptions options;
 		const CymbResult result = cymbParseArguments(tests[testIndex].arguments, tests[testIndex].argumentCount, &options, &context->diagnostics);
@@ -275,30 +329,129 @@ static void cymbTestArguments(CymbTestContext* const context)
 			}
 		}
 
-		cymbCompareDiagnostics(&(const CymbConstDiagnosticList){
-			.diagnostics = context->diagnostics.diagnostics,
-			.count = context->diagnostics.count
-		}, &tests[testIndex].diagnostics, context);
+		cymbCompareDiagnostics(&context->diagnostics, &tests[testIndex].diagnostics, context);
 
 		if(options.inputCount > 0)
 		{
 			free(options.inputs);
 		}
+
+		cymbArenaRestore(&context->arena, save);
+		cymbDiagnosticListFree(&context->diagnostics);
 	}
 
-	--context->stringCount;
+	cymbContextPop(context);
+}
+
+static void cymbTestMurmur3(CymbTestContext* const context)
+{
+	cymbContextPush(context, __func__);
+
+	const struct
+	{
+		CymbConstString string;
+		uint32_t solution;
+	} tests[] = {
+		{CYMB_STRING(""), 0x00000000},
+		{CYMB_STRING("test"), 0xBA6BD213},
+		{CYMB_STRING("Hello, world!"), 0xC0363E43},
+		{CYMB_STRING("cymb"), 0xF5188C8F},
+		{CYMB_STRING("Cymb"), 0xED4CCC41}
+	};
+	constexpr size_t testCount = CYMB_LENGTH(tests);
+
+	for(size_t testIndex = 0; testIndex < testCount; ++ testIndex)
+	{
+		cymbContextSetIndex(context, testIndex);
+
+		const uint32_t hash = cymbMurmur3((const unsigned char*)tests[testIndex].string.string, tests[testIndex].string.length);
+
+		if(hash != tests[testIndex].solution)
+		{
+			cymbFail(context, "Wrong hash.");
+		}
+	}
+
+	cymbContextPop(context);
+}
+
+static void cymbTestMap(CymbTestContext* const context)
+{
+	const CymbArenaSave save = cymbArenaSave(&context->arena);
+
+	CymbMap map;
+	if(cymbMapCreate(&map, &context->arena, 16, sizeof(unsigned int), alignof(unsigned int)) != CYMB_SUCCESS)
+	{
+		context->passed = false;
+		return;
+	}
+
+	char keys[26 * 26 * 2];
+
+	for(char first = 'a'; first <= 'z'; ++first)
+	{
+		for(char second = 'a'; second <= 'z'; ++second)
+		{
+			const unsigned char firstOffset = first - 'a';
+			const unsigned char secondOffset = second - 'a';
+
+			const unsigned int offset = firstOffset * 26 + secondOffset;
+
+			keys[offset * 2 + 0] = first;
+			keys[offset * 2 + 1] = second;
+
+			const CymbStringView key = {keys + offset * 2, 2};
+
+			if(cymbMapStore(&map, key, &offset) != CYMB_SUCCESS)
+			{
+				goto error;
+			}
+		}
+	}
+
+	for(char first = 'a'; first <= 'z'; ++first)
+	{
+		for(char second = 'a'; second <= 'z'; ++second)
+		{
+			const unsigned char firstOffset = first - 'a';
+			const unsigned char secondOffset = second - 'a';
+
+			const unsigned int offset = firstOffset * 26 + secondOffset;
+
+			const CymbStringView key = {keys + offset * 2, 2};
+
+			const unsigned int* const result = cymbMapRead(&map, key);
+			if(!result || *result != offset)
+			{
+				goto error;
+			}
+		}
+	}
+	
+	if(cymbMapRead(&map, (CymbConstString)CYMB_STRING("other_key")))
+	{
+		goto error;
+	}
+
+	goto end;
+
+	error:
+	context->passed = false;
+
+	end:
+	cymbMapFree(&map);
+	cymbArenaRestore(&context->arena, save);
 }
 
 int main(void)
 {
-	const char* strings[16];
-	CymbTestContext context = {.passed = true, .strings = strings};
-	if(cymbDiagnosticListCreate(&context.diagnostics, "cymb_test", 4) != CYMB_SUCCESS)
+	CymbTestContext context = {.passed = true};
+	if(cymbArenaCreate(&context.arena) != CYMB_SUCCESS)
 	{
-		fputs("Out of memory.\n", stderr);
 		context.passed = false;
 		goto end;
 	}
+	cymbDiagnosticListCreate(&context.diagnostics, &context.arena, "cymb_test", 4);
 
 	cymbTestTab(&context);
 
@@ -306,10 +459,15 @@ int main(void)
 
 	cymbTestArguments(&context);
 
+	cymbTestMurmur3(&context);
+
+	cymbTestMap(&context);
+
 	cymbTestLexs(&context);
 	cymbTestTrees(&context);
+	cymbTestAssemblies(&context);
 
-	cymbDiagnosticListFree(&context.diagnostics);
+	cymbArenaFree(&context.arena);
 
 	end:
 	return context.passed ? EXIT_SUCCESS : EXIT_FAILURE;

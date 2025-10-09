@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 /*
  * Print a diagnostic.
@@ -69,8 +70,8 @@ static void cymbDiagnosticPrint(const CymbDiagnostic* const diagnostic, const ch
 			fputs("Digit separator after base prefix.\n", stderr);
 			break;
 
-		case CYMB_DUPLICATE_SEPARATOR:
-			fputs("Duplicate digit separator.\n", stderr);
+		case CYMB_DUPLICATE_SEPARATORS:
+			fputs("Duplicate digit separators.\n", stderr);
 			break;
 
 		case CYMB_TRAILING_SEPARATOR:
@@ -85,6 +86,10 @@ static void cymbDiagnosticPrint(const CymbDiagnostic* const diagnostic, const ch
 			fputs("Unmatched parenthesis.\n", stderr);
 			break;
 
+		case CYMB_UNMATCHED_BRACE:
+			fputs("Unmatched brace.\n", stderr);
+			break;
+
 		case CYMB_MULTIPLE_CONST:
 			fputs("Multiple const specification.\n", stderr);
 			break;
@@ -97,13 +102,105 @@ static void cymbDiagnosticPrint(const CymbDiagnostic* const diagnostic, const ch
 			fputs("Multiple static specification.\n", stderr);
 			break;
 
+		case CYMB_MISSING_TYPE:
+			fputs("Missing type.\n", stderr);
+			break;
+
+		case CYMB_EXPECTED_EXPRESSION:
+			fputs("Expected expression.\n", stderr);
+			break;
+
+		case CYMB_INVALID_DECLARATION:
+			fputs("Invalid declaration.\n", stderr);
+			break;
+
+		case CYMB_EXPECTED_PARENTHESIS:
+			fputs("Expected parenthesis.\n", stderr);
+			break;
+
+		case CYMB_EXPECTED_SEMICOLON:
+			fputs("Expected semicolon.\n", stderr);
+			break;
+
+		case CYMB_EXPECTED_FUNCTION:
+			fputs("Expected function.\n", stderr);
+			break;
+
+		case CYMB_EXPECTED_PARAMETER:
+			fputs("Expected parameter.\n", stderr);
+			break;
+
+		case CYMB_INVALID_TYPE:
+			fputs("Invalid type.\n", stderr);
+			break;
+
+		case CYMB_UNKNOWN_INSTRUCTION:
+			fputs("Unknown instruction.\n", stderr);
+			break;
+
+		case CYMB_UNEXPECTED_CHARACTERS_AFTER_INSTRUCTION:
+			fputs("Unexpected characters after instruction.\n", stderr);
+			break;
+
+		case CYMB_MISSING_SPACE:
+			fputs("Missing space.\n", stderr);
+			break;
+
+		case CYMB_MISSING_COMMA:
+			fputs("Missing comma.\n", stderr);
+			break;
+
+		case CYMB_EXPECTED_REGISTER:
+			fputs("Expected a register.\n", stderr);
+			break;
+
+		case CYMB_EXPECTED_IMMEDIATE:
+			fputs("Expected an immediate.\n", stderr);
+			break;
+
+		case CYMB_INVALID_REGISTER:
+			fputs("Invalid register.\n", stderr);
+			break;
+
+		case CYMB_EXPECTED_SP:
+			fputs("Expected an SP register.\n", stderr);
+			break;
+
+		case CYMB_INVALID_SP:
+			fputs("Invalid SP register.\n", stderr);
+			break;
+
+		case CYMB_INVALID_ZR:
+			fputs("Invalid ZR register.\n", stderr);
+			break;
+
+		case CYMB_INVALID_REGISTER_WIDTH:
+			fputs("Invalid register width.\n", stderr);
+			break;
+
+		case CYMB_INVALID_IMMEDIATE:
+			fputs("Invalid immediate.\n", stderr);
+			break;
+
+		case CYMB_INVALID_EXTENSION:
+			fputs("Invalid extension.\n", stderr);
+			break;
+
+		case CYMB_DUPLICATE_LABEL:
+			fputs("Duplicate label.\n", stderr);
+			break;
+
+		case CYMB_INVALID_LABEL:
+			fputs("Invalid label.\n", stderr);
+			break;
+
 		default:
 			unreachable();
 	}
 
 	if(diagnostic->info.line.string)
 	{
-		const int written = fprintf(stderr, "%zu | ", diagnostic->info.position.line);
+		int written = fprintf(stderr, "%zu | ", diagnostic->info.position.line);
 
 		size_t column = 1;
 		for(size_t characterIndex = 0; characterIndex < diagnostic->info.line.length; ++characterIndex)
@@ -111,8 +208,8 @@ static void cymbDiagnosticPrint(const CymbDiagnostic* const diagnostic, const ch
 			if(diagnostic->info.line.string[characterIndex] == '\t')
 			{
 				const size_t nextTab = cymbNextTab(column, tabWidth);
-
-				for(size_t space = column; space < nextTab; ++space)
+				size_t offset = nextTab - column;
+				while(offset--)
 				{
 					fputc(' ', stderr);
 				}
@@ -127,7 +224,7 @@ static void cymbDiagnosticPrint(const CymbDiagnostic* const diagnostic, const ch
 		}
 		fputc('\n', stderr);
 
-		for(int prefixIndex = 0; prefixIndex < written; ++prefixIndex)
+		while(written--)
 		{
 			fputc(' ', stderr);
 		}
@@ -140,8 +237,8 @@ static void cymbDiagnosticPrint(const CymbDiagnostic* const diagnostic, const ch
 			if(diagnostic->info.line.string[offsetIndex] == '\t')
 			{
 				const size_t nextTab = cymbNextTab(column, tabWidth);
-
-				for(size_t space = column; space < nextTab; ++space)
+				size_t offset = nextTab - column;
+				while(offset--)
 				{
 					fputc(' ', stderr);
 				}
@@ -161,78 +258,64 @@ static void cymbDiagnosticPrint(const CymbDiagnostic* const diagnostic, const ch
 		}
 		fputc('\n', stderr);
 	}
-	else
+	else if(diagnostic->info.hint.string)
 	{
 		fputs(diagnostic->info.hint.string, stderr);
 		fputc('\n', stderr);
 	}
 }
 
-void cymbDiagnosticListPrint(const CymbConstDiagnosticList* const diagnostics)
+void cymbDiagnosticListPrint(const CymbDiagnosticList* const diagnostics)
 {
-	for(size_t diagnosticIndex = 0; diagnosticIndex < diagnostics->count; ++diagnosticIndex)
+	const CymbDiagnostic* diagnostic = diagnostics->start;
+	while(diagnostic)
 	{
-		cymbDiagnosticPrint(&diagnostics->diagnostics[diagnosticIndex], diagnostics->file, diagnostics->tabWidth);
+		cymbDiagnosticPrint(diagnostic, diagnostics->file, diagnostics->tabWidth);
+		diagnostic = diagnostic->next;
 	}
 }
 
-CymbResult cymbDiagnosticListCreate(CymbDiagnosticList* const diagnostics, const char* const file, const unsigned char tabWidth)
+void cymbDiagnosticListCreate(CymbDiagnosticList* const diagnostics, CymbArena* const arena, const char* const file, const unsigned char tabWidth)
 {
-	diagnostics->capacity = 8;
-	diagnostics->count = 0;
-
-	diagnostics->diagnostics = malloc(diagnostics->capacity * sizeof(diagnostics->diagnostics[0]));
-	if(!diagnostics->diagnostics)
-	{
-		diagnostics->capacity = 0;
-		diagnostics->file = nullptr;
-		diagnostics->tabWidth = 0;
-		return CYMB_ERROR_OUT_OF_MEMORY;
-	}
-
-	diagnostics->file = file;
-	diagnostics->tabWidth = tabWidth;
-
-	return CYMB_SUCCESS;
+	*diagnostics = (CymbDiagnosticList){
+		.file = file,
+		.tabWidth = tabWidth,
+		.arena = arena
+	};
 }
 
 void cymbDiagnosticListFree(CymbDiagnosticList* const diagnostics)
 {
-	CYMB_FREE(diagnostics->diagnostics);
-	diagnostics->count = 0;
-	diagnostics->capacity = 0;
-	diagnostics->file = nullptr;
-	diagnostics->tabWidth = 0;
+	diagnostics->start = nullptr;
+	diagnostics->end = nullptr;
 }
 
 CymbResult cymbDiagnosticAdd(CymbDiagnosticList* const diagnostics, const CymbDiagnostic* const diagnostic)
 {
-	if(diagnostics->count == diagnostics->capacity)
+	CymbDiagnostic* const result = cymbArenaGet(diagnostics->arena, sizeof(*diagnostic), alignof(typeof(*diagnostic)));
+	if(!result)
 	{
-		if(diagnostics->capacity == cymbSizeMax)
-		{
-			return CYMB_ERROR_OUT_OF_MEMORY;
-		}
-
-		const size_t newCapacity = diagnostics->capacity > cymbSizeMax / 2 ? cymbSizeMax : diagnostics->capacity * 2;
-
-		CymbDiagnostic* const newDiagnostics = realloc(diagnostics->diagnostics, newCapacity * sizeof(diagnostics->diagnostics[0]));
-		if(!newDiagnostics)
-		{
-			return CYMB_ERROR_OUT_OF_MEMORY;
-		}
-
-		diagnostics->diagnostics = newDiagnostics;
-		diagnostics->capacity = newCapacity;
+		return CYMB_OUT_OF_MEMORY;
 	}
 
-	diagnostics->diagnostics[diagnostics->count] = *diagnostic;
-	++diagnostics->count;
+	*result = *diagnostic;
+	result->next = nullptr;
+
+	if(!diagnostics->start)
+	{
+		diagnostics->start = result;
+		diagnostics->end = result;
+	}
+	else
+	{
+		diagnostics->end->next = result;
+		diagnostics->end = result;
+	}
 
 	return CYMB_SUCCESS;
 }
 
-size_t cymbNextTab(size_t column, unsigned char tabWidth)
+size_t cymbNextTab(const size_t column, const unsigned char tabWidth)
 {
 	return column + tabWidth - (column - 1) % tabWidth;
 }

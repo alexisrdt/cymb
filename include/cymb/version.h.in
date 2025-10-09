@@ -1,11 +1,21 @@
 #ifndef CYMB_VERSION_H
 #define CYMB_VERSION_H
 
+/*
+ * Cymb version constants.
+ */
 #define CYMB_VERSION_MAJOR @Cymb_VERSION_MAJOR@
 #define CYMB_VERSION_MINOR @Cymb_VERSION_MINOR@
 #define CYMB_VERSION_PATCH @Cymb_VERSION_PATCH@
 
+/*
+ * Print the Cymb version information.
+ */
 void cymbPrintVersion(void);
+
+/*
+ * Print the Cymb usage information.
+ */
 void cymbPrintHelp(void);
 
 #endif

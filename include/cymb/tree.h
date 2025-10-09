@@ -27,17 +27,17 @@ typedef enum CymbNodeType
 typedef struct CymbNode CymbNode;
 
 /*
- * A list of child nodes.
+ * A child node.
  *
  * Fields:
- * - nodes: The children array.
- * - count: The number of children.
+ * - node: The child node.
+ * - next: The next child.
  */
-typedef struct CymbNodeList
+typedef struct CymbNodeChild
 {
-	CymbNode** nodes;
-	size_t count;
-} CymbNodeList;
+	CymbNode* node;
+	struct CymbNodeChild* next;
+} CymbNodeChild;
 
 /*
  * An object type.
@@ -73,8 +73,8 @@ typedef struct CymbTypeNode
 {
 	CymbType type;
 
-	bool isConst;
-	bool isStatic;
+	bool isConst: 1;
+	bool isStatic: 1;
 } CymbTypeNode;
 
 /*
@@ -89,8 +89,8 @@ typedef struct CymbPointerNode
 {
 	CymbNode* pointedNode;
 
-	bool isConst;
-	bool isRestrict;
+	bool isConst: 1;
+	bool isRestrict: 1;
 } CymbPointerNode;
 
 /*
@@ -98,26 +98,24 @@ typedef struct CymbPointerNode
  *
  * Fields:
  * - returnType: The return type.
- * - parameterTypesStart: The start of the parameter types array.
- * - parameterTypesCount: The number of parameter types.
+ * - parameterTypesStart: The parameter types.
  */
 typedef struct CymbFunctionTypeNode
 {
 	CymbNode* returnType;
 
-	CymbNodeList parameterTypes;
+	CymbNodeChild* parameterTypes;
 } CymbFunctionTypeNode;
 
 /*
  * A program node.
  *
  * Fields:
- * - childrenStart: The start of the children array.
- * - childrenCount: The number of children.
+ * - children: The children.
  */
 typedef struct CymbProgramNode
 {
-	CymbNodeList children;
+	CymbNodeChild* children;
 } CymbProgramNode;
 
 /*
@@ -126,19 +124,17 @@ typedef struct CymbProgramNode
  * Fields:
  * - name: The name.
  * - type: The type.
- * - parametersStart: The start of the parameters array.
- * - parametersCount: The number of parameters.
- * - statementsStart: The start of the statements array.
- * - statementsCount: The number of statements.
+ * - parameters: The parameters.
+ * - statements: The statements array.
  */
 typedef struct CymbFunctionNode
 {
 	CymbNode* name;
 	CymbNode* type;
 
-	CymbNodeList parameters;
+	CymbNodeChild* parameters;
 
-	CymbNodeList statements;
+	CymbNodeChild* statements;
 } CymbFunctionNode;
 
 /*
@@ -161,12 +157,13 @@ typedef struct CymbDeclarationNode
  * A while node.
  *
  * Fields:
- * -
+ * - expression: The controlling expression.
+ * - body: The body.
  */
 typedef struct CymbWhileNode
 {
 	CymbNode* expression;
-	CymbNodeList body;
+	CymbNodeChild* body;
 } CymbWhileNode;
 
 /*
@@ -231,6 +228,9 @@ typedef struct CymbBinaryOperatorNode
 	CymbNode* rightNode;
 } CymbBinaryOperatorNode;
 
+/*
+ * A unary operator.
+ */
 typedef enum CymbUnaryOperator
 {
 	CYMB_UNARY_OPERATOR_INCREMENT,
@@ -243,6 +243,13 @@ typedef enum CymbUnaryOperator
 	CYMB_UNARY_OPERATOR_LOGICAL_NOT
 } CymbUnaryOperator;
 
+/*
+ * A unary operator node.
+ *
+ * Fields:
+ * - operator: The operator.
+ * - node: The operand.
+ */
 typedef struct CymbUnaryOperatorNode
 {
 	CymbUnaryOperator operator;
@@ -262,8 +269,10 @@ typedef struct CymbUnaryOperatorNode
  * - typeNode: The node data if it is a type node.
  * - pointerNode: The node data if it is a pointer node.
  * - functionTypeNode: The node data if it is a function type node.
+ * - whileNode: The node data if it is a while node.
  * - returnNode: The node data if it is a return node.
  * - binaryOperatorNode: The node data if it is a binary operator node.
+ * - unaryOperatorNode: The node data if it is a unary operator node.
  * - constantNode: The node data if it is a constant node.
  */
 typedef struct CymbNode
@@ -292,37 +301,14 @@ typedef struct CymbNode
  * An abstract syntax tree.
  *
  * Fields:
- * - nodes: The nodes of the tree.
- * - children: The children nodes.
- * - count: The number of nodes.
+ * - arena: The arena to use for allocations.
+ * - root: The root of the tree.
  */
 typedef struct CymbTree
 {
-	CymbNode* nodes;
-	CymbNode** children;
-	size_t count;
+	CymbArena* arena;
+	CymbNode* root;
 } CymbTree;
-
-/*
- * A temporary structure holding objects necessary to build a tree.
- *
- * Fields:
- * - tree: A pointer to the tree to build.
- * - nodesCapacity: Number of items tree->nodes can store.
- * - childrenCapacity: Number of items tree->children can store.
- * - childCount: The number of children in the tree's children buffer.
- * - lastStored: The last child stored at the end of the children buffer.
- */
-typedef struct CymbTreeBuilder
-{
-	CymbTree* tree;
-
-	size_t nodesCapacity;
-	size_t childrenCapacity;
-
-	size_t childCount;
-	size_t lastStored;
-} CymbTreeBuilder;
 
 /*
  * A traversal direction for skipping parentheses.
@@ -339,65 +325,71 @@ typedef enum CymbDirection
  * Parameters:
  * - tokens: The tokens.
  * - direction: A traversal direction.
- * - parseResult: The result.
  * - tokenIndex: The starting index, updated to the ending index.
  * - diagnostics: A list of diagnostics.
+ *
+ * Returns:
+ * - CYMB_SUCCESS on success.
+ * - CYMB_NO_MATCH if the starting token is not a parenthesis.
+ * - CYMB_INVALID if the parentheses pattern is invalid.
  */
-CymbResult cymbSkipParentheses(const CymbConstTokenList* tokens, CymbDirection direction, CymbParseResult* parseResult, size_t* tokenIndex, CymbDiagnosticList* diagnostics);
+CymbResult cymbSkipParentheses(const CymbTokenList* tokens, CymbDirection direction, size_t* tokenIndex, CymbDiagnosticList* diagnostics);
 
 /*
  * A tree function.
  *
  * Parameters:
- * - builder: The builder tree.
+ * - tree: The tree.
  * - tokens: The tokens.
- * - parseResult: The result.
  * - diagnostics: A list of diagnostics.
  *
  * Returns:
  * - CYMB_SUCCESS on success.
- * - CYMB_ERROR_OUT_OF_MEMORY if a node or diagnostic could not be added.
+ * - CYMB_INVALID if it is invalid.
+ * - CYMB_OUT_OF_MEMORY if a node or diagnostic could not be added.
  */
-typedef CymbResult (*CymbTreeFunction)(CymbTreeBuilder* builder, CymbConstTokenList* tokens, CymbParseResult* parseResult, CymbDiagnosticList* diagnostics);
+typedef CymbResult (*CymbTreeFunction)(CymbTree* tree, CymbTokenList* tokens, CymbDiagnosticList* diagnostics);
 
 /*
  * Parse an expression
  */
-CymbResult cymbParseExpression(CymbTreeBuilder* builder, CymbConstTokenList* tokens, CymbParseResult* parseResult, CymbDiagnosticList* diagnostics);
+CymbResult cymbParseExpression(CymbTree* tree, CymbTokenList* tokens, CymbDiagnosticList* diagnostics);
 
 /*
  * Parse a type.
  */
-CymbResult cymbParseType(CymbTreeBuilder* builder, CymbConstTokenList* tokens, CymbParseResult* parseResult, CymbDiagnosticList* diagnostics);
+CymbResult cymbParseType(CymbTree* tree, CymbTokenList* tokens, CymbDiagnosticList* diagnostics);
 
 /*
  * Parse a statement.
  */
-CymbResult cymbParseStatement(CymbTreeBuilder* builder, CymbConstTokenList* tokens, CymbParseResult* parseResult, CymbDiagnosticList* diagnostics);
+CymbResult cymbParseStatement(CymbTree* tree, CymbTokenList* tokens, CymbDiagnosticList* diagnostics);
 
 /*
  * Parse a function.
  */
-CymbResult cymbParseFunction(CymbTreeBuilder* builder, CymbConstTokenList* tokens, CymbParseResult* parseResult, CymbDiagnosticList* diagnostics);
+CymbResult cymbParseFunction(CymbTree* tree, CymbTokenList* tokens, CymbDiagnosticList* diagnostics);
 
 /*
  * Parse a program.
  */
-CymbResult cymbParseProgram(CymbTreeBuilder* builder, CymbConstTokenList* tokens, CymbParseResult* parseResult, CymbDiagnosticList* diagnostics);
+CymbResult cymbParseProgram(CymbTree* tree, CymbTokenList* tokens, CymbDiagnosticList* diagnostics);
 
 /*
  * Parse tokens.
  *
  * Parameters:
  * - tokens: The tokens.
+ * - arena: The arena to use for allocations.
  * - tree: The tree.abort
  * - diagnostics: A list of diagnostics.
  *
  * Returns:
  * - CYMB_SUCCESS on success.
- * - CYMB_ERROR_OUT_OF_MEMORY if a node or diagnostic could not be added.
+ * - CYMB_INVALID if it is invalid.
+ * - CYMB_OUT_OF_MEMORY if a node or diagnostic could not be added.
  */
-CymbResult cymbParse(const CymbConstTokenList* tokens, CymbTree* tree, CymbDiagnosticList* diagnostics);
+CymbResult cymbParse(const CymbTokenList* tokens, CymbArena* arena, CymbTree* tree, CymbDiagnosticList* diagnostics);
 
 /*
  * Free a tree.

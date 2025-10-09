@@ -8,6 +8,9 @@
 #include "cymb/memory.h"
 #include "cymb/version.h"
 
+/*
+ * An option.
+ */
 typedef enum CymbOption
 {
 	CYMB_OPTION_DEBUG,
@@ -18,12 +21,20 @@ typedef enum CymbOption
 	CYMB_OPTION_VERSION
 } CymbOption;
 
+/*
+ * A long option mapping.
+ *
+ * Fields:
+ * - name: The option name.
+ * - argument: A flag indicating if the options takes an argument.
+ */
 typedef struct CymbLongOption
 {
 	CymbConstString name;
 	bool argument;
 } CymbLongOption;
 
+// The long options must be stored in the same order as the options enum and in alphabetical order.
 const CymbLongOption longOptions[] = {
 	{CYMB_STRING("debug"), false},
 	{CYMB_STRING("help"), false},
@@ -35,12 +46,20 @@ const CymbLongOption longOptions[] = {
 constexpr size_t longOptionCount = CYMB_LENGTH(longOptions);
 constexpr size_t longOptionSize = sizeof(longOptions[0]);
 
+/*
+ * A short option mapping.
+ *
+ * Fields:
+ * - name: The option name.
+ * - longOptionIndex: The index of the corresponding long option.
+ */
 typedef struct CymbShortOption
 {
 	char name;
 	size_t longOptionIndex;
 } CymbShortOption;
 
+// The short options must be stored in alphabetical order.
 const CymbShortOption shortOptions[] = {
 	{'g', CYMB_OPTION_DEBUG},
 	{'h', CYMB_OPTION_HELP},
@@ -50,6 +69,18 @@ const CymbShortOption shortOptions[] = {
 constexpr size_t shortOptionCount = CYMB_LENGTH(shortOptions);
 constexpr size_t shortOptionSize = sizeof(shortOptions[0]);
 
+/*
+ * Check for short option equality.
+ *
+ * Parameters:
+ * - characterVoid: A character.
+ * - optionVoid: A short option.
+ *
+ * Returns:
+ * - 0 if the options are equal.
+ * - A negative value if the character comes before the option.
+ * - A positive value if the character comes after the option.
+ */
 static int cymbCompareShortOptions(const void* const characterVoid, const void* const optionVoid)
 {
 	const char character = *(const char*)characterVoid;
@@ -58,6 +89,18 @@ static int cymbCompareShortOptions(const void* const characterVoid, const void* 
 	return (character > option->name) - (character < option->name);
 }
 
+/*
+ * Check for long option equality.
+ *
+ * Parameters:
+ * - stringVoid: A string.
+ * - optionVoid: A long option.
+ *
+ * Returns:
+ * - 0 if the options are equal.
+ * - A negative value if the string comes before the option.
+ * - A positive value if the string comes after the option.
+ */
 static int cymbCompareLongOptions(const void* const stringVoid, const void* const optionVoid)
 {
 	const CymbConstString* const string = stringVoid;
@@ -67,6 +110,20 @@ static int cymbCompareLongOptions(const void* const stringVoid, const void* cons
 	return result == 0 ? (string->length > option->name.length) - (string->length < option->name.length) : result;
 }
 
+/*
+ * Apply an option.
+ *
+ * Parameters:
+ * - options: The options.
+ * - option: The option to apply.
+ * - argument: The option argument.
+ * - diagnostics: A list of diagnostics.
+ *
+ * Returns:
+ * - CYMB_SUCCESS on success.
+ * - CYMB_INVALID if the argument is invalid.
+ * - CYMB_OUT_OF_MEMORY if an allocation failed.
+ */
 static CymbResult cymbApplyOption(CymbOptions* const options, const CymbOption option, const CymbConstString* const argument, CymbDiagnosticList* const diagnostics)
 {
 	CymbResult result = CYMB_SUCCESS;
@@ -92,15 +149,19 @@ static CymbResult cymbApplyOption(CymbOptions* const options, const CymbOption o
 		case CYMB_OPTION_STANDARD:
 			if(*argument->string != 'c' || argument->length != 3)
 			{
+				result = CYMB_INVALID;
+
 				const CymbDiagnostic diagnostic = {
 					.type = CYMB_INVALID_ARGUMENT,
 					.info = {
 						.hint = *argument
 					}
 				};
-				result = cymbDiagnosticAdd(diagnostics, &diagnostic);
-
-				result = result == CYMB_SUCCESS ? CYMB_ERROR_INVALID_ARGUMENT : result;
+				const CymbResult diagnosticResult = cymbDiagnosticAdd(diagnostics, &diagnostic);
+				if(diagnosticResult != CYMB_SUCCESS)
+				{
+					result = diagnosticResult;
+				}
 
 				break;
 			}
@@ -131,15 +192,19 @@ static CymbResult cymbApplyOption(CymbOptions* const options, const CymbOption o
 			}
 			else
 			{
+				result = CYMB_INVALID;
+
 				const CymbDiagnostic diagnostic = {
 					.type = CYMB_INVALID_ARGUMENT,
 					.info = {
 						.hint = *argument
 					}
 				};
-				result = cymbDiagnosticAdd(diagnostics, &diagnostic);
-
-				result = result == CYMB_SUCCESS ? CYMB_ERROR_INVALID_ARGUMENT : result;
+				const CymbResult diagnosticResult = cymbDiagnosticAdd(diagnostics, &diagnostic);
+				if(diagnosticResult != CYMB_SUCCESS)
+				{
+					result = diagnosticResult;
+				}
 
 				break;
 			}
@@ -149,15 +214,19 @@ static CymbResult cymbApplyOption(CymbOptions* const options, const CymbOption o
 		case CYMB_OPTION_TAB_WIDTH:
 			if(!isdigit((unsigned char)*argument->string))
 			{
+				result = CYMB_INVALID;
+
 				const CymbDiagnostic diagnostic = {
 					.type = CYMB_INVALID_ARGUMENT,
 					.info = {
 						.hint = *argument
 					}
 				};
-				result = cymbDiagnosticAdd(diagnostics, &diagnostic);
-
-				result = result == CYMB_SUCCESS ? CYMB_ERROR_INVALID_ARGUMENT : result;
+				const CymbResult diagnosticResult = cymbDiagnosticAdd(diagnostics, &diagnostic);
+				if(diagnosticResult != CYMB_SUCCESS)
+				{
+					result = diagnosticResult;
+				}
 
 				break;
 			}
@@ -165,17 +234,21 @@ static CymbResult cymbApplyOption(CymbOptions* const options, const CymbOption o
 			char* digitsEnd;
 			const unsigned long tabWidth = strtoul(argument->string, &digitsEnd, 10);
 
-			if(tabWidth == 0 || tabWidth > 100 || digitsEnd == argument->string || *digitsEnd != '\0')
+			if(tabWidth == 0 || tabWidth > 16 || digitsEnd == argument->string || *digitsEnd != '\0')
 			{
+				result = CYMB_INVALID;
+
 				const CymbDiagnostic diagnostic = {
 					.type = CYMB_INVALID_ARGUMENT,
 					.info = {
 						.hint = *argument
 					}
 				};
-				result = cymbDiagnosticAdd(diagnostics, &diagnostic);
-
-				result = result == CYMB_SUCCESS ? CYMB_ERROR_INVALID_ARGUMENT : result;
+				const CymbResult diagnosticResult = cymbDiagnosticAdd(diagnostics, &diagnostic);
+				if(diagnosticResult != CYMB_SUCCESS)
+				{
+					result = diagnosticResult;
+				}
 
 				break;
 			}
@@ -191,6 +264,15 @@ static CymbResult cymbApplyOption(CymbOptions* const options, const CymbOption o
 	return result;
 }
 
+/*
+ * An argument parser.
+ *
+ * Fields:
+ * - arguments: The list of arguments.
+ * - argumentCount: The number of arguments.
+ * - options: The options.
+ * - diagnostics: A list of diagnostics.
+ */
 typedef struct CymbArgumentsParser
 {
 	const CymbConstString* arguments;
@@ -200,6 +282,17 @@ typedef struct CymbArgumentsParser
 	CymbDiagnosticList* diagnostics;
 } CymbArgumentsParser;
 
+/*
+ * Parse short options.
+ *
+ * Parameters:
+ * - parser: The parser.
+ *
+ * Returns:
+ * - CYMB_SUCCESS on success.
+ * - CMB_INVALID if an option is invalid.
+ * - CYMB_OUT_OF_MEMORY if an allocation failed.
+ */
 static CymbResult cymbParseShortOptions(CymbArgumentsParser* const parser)
 {
 	CymbResult result = CYMB_SUCCESS;
@@ -211,6 +304,8 @@ static CymbResult cymbParseShortOptions(CymbArgumentsParser* const parser)
 		const CymbShortOption* const shortOption = bsearch(argument, shortOptions, shortOptionCount, shortOptionSize, cymbCompareShortOptions);
 		if(!shortOption)
 		{
+			result = CYMB_INVALID;
+
 			const CymbDiagnostic diagnostic = {
 				.type = CYMB_UNKNOWN_OPTION,
 				.info = {
@@ -218,14 +313,11 @@ static CymbResult cymbParseShortOptions(CymbArgumentsParser* const parser)
 				}
 			};
 			const CymbResult diagnosticResult = cymbDiagnosticAdd(parser->diagnostics, &diagnostic);
-
 			if(diagnosticResult != CYMB_SUCCESS)
 			{
 				result = diagnosticResult;
 				goto end;
 			}
-
-			result = CYMB_ERROR_INVALID_ARGUMENT;
 
 			goto next_argument;
 		}
@@ -247,6 +339,8 @@ static CymbResult cymbParseShortOptions(CymbArgumentsParser* const parser)
 			--parser->argumentCount;
 			if(parser->argumentCount == 0)
 			{
+				result = CYMB_INVALID;
+
 				const CymbDiagnostic diagnostic = {
 					.type = CYMB_MISSING_ARGUMENT,
 					.info = {
@@ -254,14 +348,11 @@ static CymbResult cymbParseShortOptions(CymbArgumentsParser* const parser)
 					}
 				};
 				const CymbResult diagnosticResult = cymbDiagnosticAdd(parser->diagnostics, &diagnostic);
-
 				if(diagnosticResult != CYMB_SUCCESS)
 				{
 					result = diagnosticResult;
 					goto end;
 				}
-
-				result = CYMB_ERROR_INVALID_ARGUMENT;
 
 				continue;
 			}
@@ -271,11 +362,11 @@ static CymbResult cymbParseShortOptions(CymbArgumentsParser* const parser)
 
 		apply:
 		const CymbResult applyResult = cymbApplyOption(parser->options, option - longOptions, &optionArgument, parser->diagnostics);
-		if(applyResult == CYMB_ERROR_OUT_OF_MEMORY)
+		if(applyResult == CYMB_OUT_OF_MEMORY)
 		{
 			goto end;
 		}
-		else if(applyResult == CYMB_ERROR_INVALID_ARGUMENT)
+		else if(applyResult == CYMB_INVALID)
 		{
 			result = applyResult;
 		}
@@ -293,6 +384,17 @@ static CymbResult cymbParseShortOptions(CymbArgumentsParser* const parser)
 	return result;
 }
 
+/*
+ * Parse a long option.
+ *
+ * Parameters:
+ * - parser: The parser.
+ *
+ * Returns:
+ * - CYMB_SUCCESS on success.
+ * - CMB_INVALID if an option is invalid.
+ * - CYMB_OUT_OF_MEMORY if an allocation failed.
+ */
 static CymbResult cymbParseLongOption(CymbArgumentsParser* const parser)
 {
 	CymbResult result = CYMB_SUCCESS;
@@ -312,6 +414,8 @@ static CymbResult cymbParseLongOption(CymbArgumentsParser* const parser)
 	const CymbLongOption* const option = bsearch(&optionString, longOptions, longOptionCount, longOptionSize, cymbCompareLongOptions);
 	if(!option)
 	{
+		result = CYMB_INVALID;
+
 		const CymbDiagnostic diagnostic = {
 			.type = CYMB_UNKNOWN_OPTION,
 			.info = {
@@ -319,14 +423,10 @@ static CymbResult cymbParseLongOption(CymbArgumentsParser* const parser)
 			}
 		};
 		const CymbResult diagnosticResult = cymbDiagnosticAdd(parser->diagnostics, &diagnostic);
-
 		if(diagnosticResult != CYMB_SUCCESS)
 		{
 			result = diagnosticResult;
-			goto end;
 		}
-
-		result = CYMB_ERROR_INVALID_ARGUMENT;
 
 		goto end;
 	}
@@ -335,6 +435,8 @@ static CymbResult cymbParseLongOption(CymbArgumentsParser* const parser)
 
 	if(!option->argument && equal)
 	{
+		result = CYMB_INVALID;
+
 		const CymbDiagnostic diagnostic = {
 			.type = CYMB_UNEXPECTED_ARGUMENT,
 			.info = {
@@ -342,14 +444,10 @@ static CymbResult cymbParseLongOption(CymbArgumentsParser* const parser)
 			}
 		};
 		const CymbResult diagnosticResult = cymbDiagnosticAdd(parser->diagnostics, &diagnostic);
-
 		if(diagnosticResult != CYMB_SUCCESS)
 		{
 			result = diagnosticResult;
-			goto end;
 		}
-
-		result = CYMB_ERROR_INVALID_ARGUMENT;
 
 		goto end;
 	}
@@ -358,6 +456,8 @@ static CymbResult cymbParseLongOption(CymbArgumentsParser* const parser)
 	{
 		if(optionString.length == argument.length - 1)
 		{
+			result = CYMB_INVALID;
+
 			const CymbDiagnostic diagnostic = {
 				.type = CYMB_MISSING_ARGUMENT,
 				.info = {
@@ -365,14 +465,10 @@ static CymbResult cymbParseLongOption(CymbArgumentsParser* const parser)
 				}
 			};
 			const CymbResult diagnosticResult = cymbDiagnosticAdd(parser->diagnostics, &diagnostic);
-
 			if(diagnosticResult != CYMB_SUCCESS)
 			{
 				result = diagnosticResult;
-				goto end;
 			}
-
-			result = CYMB_ERROR_INVALID_ARGUMENT;
 
 			goto end;
 		}
@@ -387,6 +483,8 @@ static CymbResult cymbParseLongOption(CymbArgumentsParser* const parser)
 			--parser->argumentCount;
 			if(parser->argumentCount == 0)
 			{
+				result = CYMB_INVALID;
+
 				const CymbDiagnostic diagnostic = {
 					.type = CYMB_MISSING_ARGUMENT,
 					.info = {
@@ -394,14 +492,10 @@ static CymbResult cymbParseLongOption(CymbArgumentsParser* const parser)
 					}
 				};
 				const CymbResult diagnosticResult = cymbDiagnosticAdd(parser->diagnostics, &diagnostic);
-
 				if(diagnosticResult != CYMB_SUCCESS)
 				{
 					result = diagnosticResult;
-					goto end;
 				}
-
-				result = CYMB_ERROR_INVALID_ARGUMENT;
 
 				goto end;
 			}
@@ -438,7 +532,7 @@ CymbResult cymbParseArguments(const CymbConstString* const arguments, const size
 	options->inputs = malloc(inputsCapacity * sizeof(options->inputs[0]));
 	if(!options->inputs)
 	{
-		result = CYMB_ERROR_OUT_OF_MEMORY;
+		result = CYMB_OUT_OF_MEMORY;
 		goto end;
 	}
 
@@ -454,11 +548,13 @@ CymbResult cymbParseArguments(const CymbConstString* const arguments, const size
 
 			if(options->inputCount == inputsCapacity)
 			{
-				if(inputsCapacity * sizeof(options->inputs[0]) == cymbSizeMax)
+				if(inputsCapacity >= cymbSizeMax / sizeof(options->inputs[0]))
 				{
 					CYMB_FREE(options->inputs);
 					options->inputCount = 0;
 					tooManyInputs = true;
+
+					result = CYMB_OUT_OF_MEMORY;
 
 					const CymbDiagnostic diagnostic = {
 						.type = CYMB_TOO_MANY_INPUTS,
@@ -476,13 +572,13 @@ CymbResult cymbParseArguments(const CymbConstString* const arguments, const size
 					goto next;
 				}
 
-				const size_t newCapacity = inputsCapacity > cymbSizeMax / 2 ? cymbSizeMax : inputsCapacity * 2;
+				const size_t newCapacity = inputsCapacity > cymbSizeMax / 2 / sizeof(options->inputs[0]) ? cymbSizeMax / sizeof(options->inputs[0]) : inputsCapacity * 2;
 				const char** newInputs = realloc(options->inputs, newCapacity);
 				if(!newInputs)
 				{
 					CYMB_FREE(options->inputs);
 					options->inputCount = 0;
-					result = CYMB_ERROR_OUT_OF_MEMORY;
+					result = CYMB_OUT_OF_MEMORY;
 					goto end;
 				}
 				options->inputs = newInputs;
@@ -502,7 +598,7 @@ CymbResult cymbParseArguments(const CymbConstString* const arguments, const size
 			{
 				result = shortResult;
 			}
-			if(result == CYMB_ERROR_OUT_OF_MEMORY)
+			if(result == CYMB_OUT_OF_MEMORY)
 			{
 				CYMB_FREE(options->inputs);
 				options->inputCount = 0;
@@ -524,7 +620,7 @@ CymbResult cymbParseArguments(const CymbConstString* const arguments, const size
 		{
 			result = longResult;
 		}
-		if(result == CYMB_ERROR_OUT_OF_MEMORY)
+		if(result == CYMB_OUT_OF_MEMORY)
 		{
 			CYMB_FREE(options->inputs);
 			options->inputCount = 0;
@@ -545,6 +641,8 @@ CymbResult cymbParseArguments(const CymbConstString* const arguments, const size
 
 		if(!options->help && !options->version)
 		{
+			result = CYMB_INVALID;
+
 			const CymbDiagnostic diagnostic = {
 				.type = CYMB_MISSING_ARGUMENT
 			};

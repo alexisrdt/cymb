@@ -23,14 +23,39 @@ typedef enum CymbDiagnosticType
 	CYMB_UNFINISHED_STRING,
 	CYMB_CONSTANT_TOO_LARGE,
 	CYMB_SEPARATOR_AFTER_BASE,
-	CYMB_DUPLICATE_SEPARATOR,
+	CYMB_DUPLICATE_SEPARATORS,
 	CYMB_TRAILING_SEPARATOR,
 	// Nodes.
 	CYMB_UNEXPECTED_TOKEN,
 	CYMB_UNMATCHED_PARENTHESIS,
+	CYMB_UNMATCHED_BRACE,
 	CYMB_MULTIPLE_CONST,
 	CYMB_MULTIPLE_RESTRICT,
-	CYMB_MULTIPLE_STATIC
+	CYMB_MULTIPLE_STATIC,
+	CYMB_MISSING_TYPE,
+	CYMB_INVALID_TYPE,
+	CYMB_EXPECTED_EXPRESSION,
+	CYMB_INVALID_DECLARATION,
+	CYMB_EXPECTED_PARENTHESIS,
+	CYMB_EXPECTED_SEMICOLON,
+	CYMB_EXPECTED_FUNCTION,
+	CYMB_EXPECTED_PARAMETER,
+	// Assembly.
+	CYMB_UNKNOWN_INSTRUCTION,
+	CYMB_UNEXPECTED_CHARACTERS_AFTER_INSTRUCTION,
+	CYMB_MISSING_SPACE,
+	CYMB_MISSING_COMMA,
+	CYMB_EXPECTED_REGISTER,
+	CYMB_EXPECTED_IMMEDIATE,
+	CYMB_INVALID_REGISTER,
+	CYMB_EXPECTED_SP,
+	CYMB_INVALID_SP,
+	CYMB_INVALID_ZR,
+	CYMB_INVALID_REGISTER_WIDTH,
+	CYMB_INVALID_IMMEDIATE,
+	CYMB_INVALID_EXTENSION,
+	CYMB_DUPLICATE_LABEL,
+	CYMB_INVALID_LABEL
 } CymbDiagnosticType;
 
 /*
@@ -57,7 +82,6 @@ typedef struct CymbPosition
 typedef struct CymbDiagnosticInfo
 {
 	CymbPosition position;
-
 	CymbStringView line;
 	CymbStringView hint;
 } CymbDiagnosticInfo;
@@ -68,12 +92,14 @@ typedef struct CymbDiagnosticInfo
  * Fields:
  * - type: The diagnostic type.
  * - info: The diagnostic info.
+ * - next: The next diagnostic.
  */
 typedef struct CymbDiagnostic
 {
 	CymbDiagnosticType type;
-
 	CymbDiagnosticInfo info;
+
+	struct CymbDiagnostic* next;
 } CymbDiagnostic;
 
 /*
@@ -82,39 +108,19 @@ typedef struct CymbDiagnostic
  * Fields:
  * - file: The file for which diagnostics are emitted.
  * - tabWidth: The tab width used for diagnostics.
- * - diagnostics: The diagnostics.
- * - count: The number of diagnostics.
- * - capacity: The capacity of the diagnostics array.
+ * - arena: The arena used for allocations.
+ * - start: The first diagnostic.
+ * - end: The last diagnostic.
  */
 typedef struct CymbDiagnosticList
 {
 	const char* file;
-
 	unsigned char tabWidth;
 
-	CymbDiagnostic* diagnostics;
-	size_t count;
-	size_t capacity;
+	CymbArena* arena;
+	CymbDiagnostic* start;
+	CymbDiagnostic* end;
 } CymbDiagnosticList;
-
-/*
- * A list of constant diagnostics.
- *
- * Fields:
- * - file: The file for which diagnostics are emitted.
- * - tabWidth: The tab width used for diagnostics.
- * - diagnostics: The diagnostics.
- * - count: The number of diagnostics.
- */
-typedef struct CymbConstDiagnosticList
-{
-	const char* file;
-
-	unsigned char tabWidth;
-
-	const CymbDiagnostic* diagnostics;
-	size_t count;
-} CymbConstDiagnosticList;
 
 /*
  * Print diagnostics.
@@ -122,21 +128,18 @@ typedef struct CymbConstDiagnosticList
  * Parameters:
  * - diagnostics: The diagnostics to print.
  */
-void cymbDiagnosticListPrint(const CymbConstDiagnosticList* diagnostics);
+void cymbDiagnosticListPrint(const CymbDiagnosticList* diagnostics);
 
 /*
  * Create a diagnostic list.
  *
  * Parameters:
  * - diagnostics: A pointer to the list to create.
+ * - arena: The arena to use for allocations.
  * - file: The file for which diagnostics are emitted.
  * - tabWidth: The tab width used for diagnostics.
- *
- * Returns:
- * - CYMB_SUCCESS on success.
- * - CYMB_ERROR_OUT_OF_MEMORY if the list could not be created.
  */
-CymbResult cymbDiagnosticListCreate(CymbDiagnosticList* diagnostics, const char* file, unsigned char tabWidth);
+void cymbDiagnosticListCreate(CymbDiagnosticList* diagnostics, CymbArena* arena, const char* file, unsigned char tabWidth);
 
 /*
  * Free a list of diagnostics.
@@ -155,7 +158,7 @@ void cymbDiagnosticListFree(CymbDiagnosticList* diagnostics);
  *
  * Returns:
  * - CYMB_SUCCESS on success.
- * - CYMB_ERROR_OUT_OF_MEMORY if the diagnostic could not be added.
+ * - CYMB_OUT_OF_MEMORY if the diagnostic could not be added.
  */
 CymbResult cymbDiagnosticAdd(CymbDiagnosticList* diagnostics, const CymbDiagnostic* diagnostic);
 

@@ -51,11 +51,27 @@ void cymbReaderPop(CymbReader* reader);
 void cymbReaderSkip(CymbReader* reader, size_t count);
 
 /*
+ * Skip line in a reader.
+ *
+ * Parameters:
+ * - reader: A reader.
+ */
+void cymbReaderSkipLine(CymbReader* reader);
+
+/*
  * Skip spaces in a reader.
  *
  * Parameters:
  * - reader: A reader.
  */
 void cymbReaderSkipSpaces(CymbReader* reader);
+
+/*
+ * Skip spaces in a line in a reader.
+ *
+ * Parameters:
+ * - reader: A reader.
+ */
+void cymbReaderSkipSpacesInLine(CymbReader* reader);
 
 #endif
