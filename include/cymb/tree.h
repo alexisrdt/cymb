@@ -21,7 +21,11 @@ typedef enum CymbNodeType
 	CYMB_NODE_BINARY_OPERATOR,
 	CYMB_NODE_UNARY_OPERATOR,
 	CYMB_NODE_IDENTIFIER,
-	CYMB_NODE_CONSTANT
+	CYMB_NODE_CONSTANT,
+	CYMB_NODE_FUNCTION_CALL,
+	CYMB_NODE_ARRAY_SUBSCRIPT,
+	CYMB_NODE_MEMBER_ACCESS,
+	CYMB_NODE_POSTFIX_OPERATOR
 } CymbNodeType;
 
 typedef struct CymbNode CymbNode;
@@ -258,6 +262,82 @@ typedef struct CymbUnaryOperatorNode
 } CymbUnaryOperatorNode;
 
 /*
+ * A function call node.
+ *
+ * Fields:
+ * - name: The function name.
+ * - arguments: The arguments.
+ */
+typedef struct CymbFunctionCallNode
+{
+	CymbNode* name;
+
+	CymbNodeChild* arguments;
+} CymbFunctionCallNode;
+
+/*
+ * An array subscript node.
+ *
+ * Fields:
+ * - name: The array name.
+ * - expression: The subscripting expression.
+ */
+typedef struct CymbArraySubscriptNode
+{
+	CymbNode* name;
+
+	CymbNode* expression;
+} CymbArraySubscriptNode;
+
+/*
+ * A member access type.
+ */
+typedef enum CymbMemberAccessType
+{
+	CYMB_MEMBER_ACCESS,
+	CYMB_MEMBER_ACCESS_POINTER
+} CymbMemberAccessType;
+
+/*
+ * A member access node.
+ *
+ * Fields:
+ * - type: The member access type.
+ * - name: The object name.
+ * - member: The member name.
+ */
+typedef struct CymbMemberAccessNode
+{
+	CymbMemberAccessType type;
+
+	CymbNode* name;
+	CymbNode* member;
+} CymbMemberAccessNode;
+
+/*
+ * A postfix operator.
+ */
+typedef enum CymbPostfixOperator
+{
+	CYMB_POSTFIX_OPERATOR_INCREMENT,
+	CYMB_POSTFIX_OPERATOR_DECREMENT
+} CymbPostfixOperator;
+
+/*
+ * A postfix operator node.
+ *
+ * Fields:
+ * - operator: The operator.
+ * - node: The operand.
+ */
+typedef struct CymbPostfixOperatorNode
+{
+	CymbPostfixOperator operator;
+
+	CymbNode* node;
+} CymbPostfixOperatorNode;
+
+/*
  * A node.
  *
  * Fields:
@@ -274,6 +354,10 @@ typedef struct CymbUnaryOperatorNode
  * - binaryOperatorNode: The node data if it is a binary operator node.
  * - unaryOperatorNode: The node data if it is a unary operator node.
  * - constantNode: The node data if it is a constant node.
+ * - functionCallNode: The node data if it is a function call node.
+ * - arraySubscriptNode: The node data if it is an array subscript node.
+ * - memberAccessNode: The node data if it is a member access node.
+ * - postfixOperatorNode: The node data if it is a postfix operator node.
  */
 typedef struct CymbNode
 {
@@ -294,6 +378,10 @@ typedef struct CymbNode
 		CymbBinaryOperatorNode binaryOperatorNode;
 		CymbUnaryOperatorNode unaryOperatorNode;
 		CymbConstantNode constantNode;
+		CymbFunctionCallNode functionCallNode;
+		CymbArraySubscriptNode arraySubscriptNode;
+		CymbMemberAccessNode memberAccessNode;
+		CymbPostfixOperatorNode postfixOperatorNode;
 	};
 } CymbNode;
 

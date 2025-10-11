@@ -153,7 +153,7 @@ static CymbResult cymbCompile(CymbArena* const arena, CymbDiagnosticList* const 
 	{
 		result = parseResult;
 	}
-	
+
 	cymbFreeTree(&tree);
 	cymbFreeTokenList(&tokens);
 

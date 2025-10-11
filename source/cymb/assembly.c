@@ -26,7 +26,6 @@
  * - Z: First register is ZR.
  */
 
-
 /*
  * An instruction.
  *

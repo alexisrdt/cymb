@@ -137,8 +137,8 @@ typedef enum CymbAssociativity
  */
 typedef struct CymbBinaryOperatorMapping
 {
+	
 	CymbTokenType token;
-
 	CymbBinaryOperator operator;
 	unsigned char precedence;
 	CymbAssociativity associativity;
@@ -251,13 +251,14 @@ static int cymbCompareUnaryOperator(const void* const tokenVoid, const void* con
  * - tokens: The tokens.
  * - diagnostics: A list of diagnostics.
  * - minimumPrecedence: The minimum precedence to consider the subexpression finished.
+ * - hadParenthesis: A flag indicating if seeing a closed parenthesis is valid.
  *
  * Returns:
  * - CYMB_SUCCESS on success.
  * - CYMB_INVALID if it is invalid.
  * - CYMB_OUT_OF_MEMORY if a node or diagnostic could not be added.
  */
-static CymbResult cymbParseSubexpression(CymbTree* const tree, CymbTokenList* const tokens, CymbDiagnosticList* const diagnostics, const unsigned char minimumPrecedence)
+static CymbResult cymbParseSubexpression(CymbTree* const tree, CymbTokenList* const tokens, CymbDiagnosticList* const diagnostics, const unsigned char minimumPrecedence, const bool hadParenthesis)
 {
 	CymbResult result = CYMB_SUCCESS;
 
@@ -285,7 +286,7 @@ static CymbResult cymbParseSubexpression(CymbTree* const tree, CymbTokenList* co
 		++tokens->tokens;
 		--tokens->count;
 
-		result = cymbParseSubexpression(tree, tokens, diagnostics, 0);
+		result = cymbParseSubexpression(tree, tokens, diagnostics, 0, true);
 		if(result != CYMB_SUCCESS)
 		{
 			goto end;
@@ -327,7 +328,7 @@ static CymbResult cymbParseSubexpression(CymbTree* const tree, CymbTokenList* co
 			++tokens->tokens;
 			--tokens->count;
 
-			result = cymbParseSubexpression(tree, tokens, diagnostics, binaryOperators[0].precedence + 1);
+			result = cymbParseSubexpression(tree, tokens, diagnostics, binaryOperators[0].precedence + 1, hadParenthesis);
 			if(result != CYMB_SUCCESS)
 			{
 				goto end;
@@ -364,10 +365,12 @@ static CymbResult cymbParseSubexpression(CymbTree* const tree, CymbTokenList* co
 				.type = tokens->tokens[0].type == CYMB_TOKEN_CONSTANT ? CYMB_NODE_CONSTANT : CYMB_NODE_IDENTIFIER,
 				.info = tokens->tokens[0].info
 			};
+
 			if(tokens->tokens[0].type == CYMB_TOKEN_CONSTANT)
 			{
 				leftNode.constantNode = tokens->tokens[0].constant;
 			}
+
 			result = cymbAddNode(tree, &leftNode);
 			if(result != CYMB_SUCCESS)
 			{
@@ -383,7 +386,303 @@ static CymbResult cymbParseSubexpression(CymbTree* const tree, CymbTokenList* co
 	{
 		if(tokens->tokens[0].type == CYMB_TOKEN_CLOSE_PARENTHESIS)
 		{
+			if(!hadParenthesis)
+			{
+				result = CYMB_INVALID;
+
+				const CymbDiagnostic diagnostic = {
+					.type = CYMB_UNMATCHED_PARENTHESIS,
+					.info = tokens->tokens[0].info
+				};
+				const CymbResult diagnosticResult = cymbDiagnosticAdd(diagnostics, &diagnostic);
+				if(diagnosticResult != CYMB_SUCCESS)
+				{
+					result = diagnosticResult;
+				}
+			}
+
 			goto end;
+		}
+
+		if(tokens->tokens[0].type == CYMB_TOKEN_OPEN_BRACKET)
+		{
+			const CymbDiagnosticInfo bracketInfo = tokens->tokens[0].info;
+
+			++tokens->tokens;
+			--tokens->count;
+
+			CymbNode node = {
+				.type = CYMB_NODE_ARRAY_SUBSCRIPT,
+				.info = tree->root->info,
+				.arraySubscriptNode = {
+					.name = tree->root
+				}
+			};
+
+			CymbToken* token = tokens->tokens;
+
+			size_t parenthesisCount = 0;
+			size_t bracketCount = 0;
+			while(
+				token < tokens->tokens + tokens->count &&
+				!(parenthesisCount == 0 && bracketCount == 0 && token->type == CYMB_TOKEN_CLOSE_BRACKET)
+			)
+			{
+				parenthesisCount += token->type == CYMB_TOKEN_OPEN_PARENTHESIS;
+				parenthesisCount -= token->type == CYMB_TOKEN_CLOSE_PARENTHESIS;
+
+				bracketCount += token->type == CYMB_TOKEN_OPEN_BRACKET;
+				bracketCount -= token->type == CYMB_TOKEN_CLOSE_BRACKET;
+
+				++token;
+			}
+			if(token == tokens->tokens + tokens->count)
+			{
+				result = CYMB_INVALID;
+
+				const CymbDiagnostic diagnostic = {
+					.type = CYMB_UNMATCHED_BRACKET,
+					.info = bracketInfo
+				};
+				const CymbResult diagnosticResult = cymbDiagnosticAdd(diagnostics, &diagnostic);
+				if(diagnosticResult != CYMB_SUCCESS)
+				{
+					result = diagnosticResult;
+				}
+
+				goto end;
+			}
+
+			const size_t argumentLength = token - tokens->tokens;
+
+			if(argumentLength == 0)
+			{
+				result = CYMB_INVALID;
+
+				const CymbDiagnostic diagnostic = {
+					.type = CYMB_EXPECTED_EXPRESSION,
+					.info = token->info
+				};
+				const CymbResult diagnosticResult = cymbDiagnosticAdd(diagnostics, &diagnostic);
+				if(diagnosticResult != CYMB_SUCCESS)
+				{
+					result = diagnosticResult;
+				}
+
+				goto end;
+			}
+
+			result = cymbParseSubexpression(tree, &(CymbTokenList){
+				.tokens = tokens->tokens,
+				.count = argumentLength
+			}, diagnostics, 0, false);
+			if(result != CYMB_SUCCESS)
+			{
+				goto end;
+			}
+
+			node.arraySubscriptNode.expression = tree->root;
+
+			tokens->tokens = token + 1;
+			tokens->count -= argumentLength + 1;
+
+			result = cymbAddNode(tree, &node);
+			if(result != CYMB_SUCCESS)
+			{
+				goto end;
+			}
+
+			continue;
+		}
+
+		if(tokens->tokens[0].type == CYMB_TOKEN_OPEN_PARENTHESIS)
+		{
+			const CymbDiagnosticInfo parenthesisInfo = tokens->tokens[0].info;
+
+			++tokens->tokens;
+			--tokens->count;
+
+			CymbNode node = {
+				.type = CYMB_NODE_FUNCTION_CALL,
+				.info = tree->root->info,
+				.functionCallNode = {
+					.name = tree->root
+				}
+			};
+
+			CymbNodeChild* arguments = nullptr;
+
+			while(true)
+			{
+				CymbToken* token = tokens->tokens;
+
+				size_t parenthesisCount = 0;
+				while(
+					token < tokens->tokens + tokens->count &&
+					!(parenthesisCount == 0 && token->type == CYMB_TOKEN_COMMA) &&
+					!(parenthesisCount == 0 && token->type == CYMB_TOKEN_CLOSE_PARENTHESIS)
+				)
+				{
+					parenthesisCount += token->type == CYMB_TOKEN_OPEN_PARENTHESIS;
+					parenthesisCount -= token->type == CYMB_TOKEN_CLOSE_PARENTHESIS;
+
+					++token;
+				}
+				if(token == tokens->tokens + tokens->count)
+				{
+					result = CYMB_INVALID;
+
+					const CymbDiagnostic diagnostic = {
+						.type = CYMB_UNMATCHED_PARENTHESIS,
+						.info = parenthesisInfo
+					};
+					const CymbResult diagnosticResult = cymbDiagnosticAdd(diagnostics, &diagnostic);
+					if(diagnosticResult != CYMB_SUCCESS)
+					{
+						result = diagnosticResult;
+					}
+
+					goto end;
+				}
+
+				const size_t argumentLength = token - tokens->tokens;
+
+				if(argumentLength == 0)
+				{
+					if(!node.functionCallNode.arguments)
+					{
+						++tokens->tokens;
+						--tokens->count;
+
+						break;
+					}
+
+					result = CYMB_INVALID;
+
+					const CymbDiagnostic diagnostic = {
+						.type = CYMB_EXPECTED_EXPRESSION,
+						.info = token->info
+					};
+					const CymbResult diagnosticResult = cymbDiagnosticAdd(diagnostics, &diagnostic);
+					if(diagnosticResult != CYMB_SUCCESS)
+					{
+						result = diagnosticResult;
+					}
+
+					goto end;
+				}
+
+				result = cymbParseSubexpression(tree, &(CymbTokenList){
+					.tokens = tokens->tokens,
+					.count = argumentLength
+				}, diagnostics, 0, false);
+				if(result != CYMB_SUCCESS)
+				{
+					goto end;
+				}
+
+				result = cymbCreateChild(tree, &arguments);
+				if(result != CYMB_SUCCESS)
+				{
+					goto end;
+				}
+
+				if(!node.functionCallNode.arguments)
+				{
+					node.functionCallNode.arguments = arguments;
+				}
+
+				tokens->tokens = token + 1;
+				tokens->count -= argumentLength + 1;
+
+				if(tokens->tokens[-1].type == CYMB_TOKEN_CLOSE_PARENTHESIS)
+				{
+					break;
+				}
+			}
+
+			result = cymbAddNode(tree, &node);
+			if(result != CYMB_SUCCESS)
+			{
+				goto end;
+			}
+
+			continue;
+		}
+
+		if(tokens->tokens[0].type == CYMB_TOKEN_DOT || tokens->tokens[0].type == CYMB_TOKEN_ARROW)
+		{
+			if(tokens->count <= 1 || tokens->tokens[1].type != CYMB_TOKEN_IDENTIFIER)
+			{
+				result = CYMB_INVALID;
+
+				const CymbDiagnostic diagnostic = {
+					.type = CYMB_EXPECTED_IDENTIFIER,
+					.info = tokens->tokens[0].info
+				};
+				const CymbResult diagnosticResult = cymbDiagnosticAdd(diagnostics, &diagnostic);
+				if(diagnosticResult != CYMB_SUCCESS)
+				{
+					result = diagnosticResult;
+				}
+
+				goto end;
+			}
+
+			CymbNode* const name = tree->root;
+
+			CymbNode node = {
+				.type = CYMB_NODE_IDENTIFIER,
+				.info = tokens->tokens[1].info
+			};
+			result = cymbAddNode(tree, &node);
+			if(result != CYMB_SUCCESS)
+			{
+				goto end;
+			}
+
+			node = (CymbNode){
+				.type = CYMB_NODE_MEMBER_ACCESS,
+				.memberAccessNode = {
+					.type = tokens->tokens[0].type == CYMB_TOKEN_DOT ? CYMB_MEMBER_ACCESS : CYMB_MEMBER_ACCESS_POINTER,
+					.name = name,
+					.member = tree->root
+				},
+				.info = tokens->tokens[0].info
+			};
+			result = cymbAddNode(tree, &node);
+			if(result != CYMB_SUCCESS)
+			{
+				goto end;
+			}
+
+			tokens->tokens += 2;
+			tokens->count -= 2;
+
+			continue;
+		}
+
+		if(tokens->tokens[0].type == CYMB_TOKEN_PLUS_PLUS || tokens->tokens[0].type == CYMB_TOKEN_MINUS_MINUS)
+		{
+			const CymbNode node = {
+				.type = CYMB_NODE_POSTFIX_OPERATOR,
+				.postfixOperatorNode = {
+					.operator = tokens->tokens[0].type == CYMB_TOKEN_PLUS_PLUS ? CYMB_POSTFIX_OPERATOR_INCREMENT : CYMB_POSTFIX_OPERATOR_DECREMENT,
+					.node = tree->root
+				},
+				.info = tokens->tokens[0].info
+			};
+
+			result = cymbAddNode(tree, &node);
+			if(result != CYMB_SUCCESS)
+			{
+				goto end;
+			}
+
+			++tokens->tokens;
+			--tokens->count;
+
+			continue;
 		}
 
 		const CymbBinaryOperatorMapping* const operator = cymbFind(&tokens->tokens[0].type, binaryOperators, binaryOperatorCount, binaryOperatorSize, cymbCompareBinaryOperator);
@@ -421,7 +720,7 @@ static CymbResult cymbParseSubexpression(CymbTree* const tree, CymbTokenList* co
 		++tokens->tokens;
 		--tokens->count;
 
-		result = cymbParseSubexpression(tree, tokens, diagnostics, operator->precedence);
+		result = cymbParseSubexpression(tree, tokens, diagnostics, operator->precedence, hadParenthesis);
 		if(result != CYMB_SUCCESS)
 		{
 			goto end;
@@ -442,7 +741,7 @@ static CymbResult cymbParseSubexpression(CymbTree* const tree, CymbTokenList* co
 
 CymbResult cymbParseExpression(CymbTree* const tree, CymbTokenList* const tokens, CymbDiagnosticList* const diagnostics)
 {
-	return cymbParseSubexpression(tree, tokens, diagnostics, 0);
+	return cymbParseSubexpression(tree, tokens, diagnostics, 0, false);
 }
 
 CymbResult cymbParseType(CymbTree* const tree, CymbTokenList* const tokens, CymbDiagnosticList* const diagnostics)

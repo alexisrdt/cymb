@@ -1,6 +1,5 @@
-int some_func()
+int some_func(unsigned char a)
 {
-	int a;
 	int b = 0;
 
 	a = (b + 3) * 5;
@@ -16,7 +15,10 @@ int main(void)
 	while(c > 0)
 	{
 		--c;
+		c = ++some_func(doit(a++, thing(5, b * (4 + 3)), c--));
 	}
 
-	return 0;
+	a += array[5][other[1](6, 7)];
+
+	return my_struct.field->other();
 }

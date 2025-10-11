@@ -90,6 +90,10 @@ static void cymbDiagnosticPrint(const CymbDiagnostic* const diagnostic, const ch
 			fputs("Unmatched brace.\n", stderr);
 			break;
 
+		case CYMB_UNMATCHED_BRACKET:
+			fputs("Unmatched bracket.\n", stderr);
+			break;
+
 		case CYMB_MULTIPLE_CONST:
 			fputs("Multiple const specification.\n", stderr);
 			break;
@@ -128,6 +132,10 @@ static void cymbDiagnosticPrint(const CymbDiagnostic* const diagnostic, const ch
 
 		case CYMB_EXPECTED_PARAMETER:
 			fputs("Expected parameter.\n", stderr);
+			break;
+
+		case CYMB_EXPECTED_IDENTIFIER:
+			fputs("Expected identifier.\n", stderr);
 			break;
 
 		case CYMB_INVALID_TYPE:

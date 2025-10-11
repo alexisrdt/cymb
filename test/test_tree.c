@@ -75,6 +75,68 @@ static void cymbCompareNodes(const CymbNode* const first, const CymbNode* const 
 			break;
 		}
 
+		case CYMB_NODE_FUNCTION_CALL:
+		{
+			cymbCompareNodes(first->functionCallNode.name, second->functionCallNode.name, context, nodeCount);
+
+			const CymbNodeChild* firstArgument = first->functionCallNode.arguments;
+			const CymbNodeChild* secondArgument = second->functionCallNode.arguments;
+
+			while(firstArgument)
+			{
+				if(!secondArgument)
+				{
+					cymbFail(context, "Unexpected argument node.");
+					return;
+				}
+
+				cymbCompareNodes(firstArgument->node, secondArgument->node, context, nodeCount);
+
+				firstArgument = firstArgument->next;
+				secondArgument = secondArgument->next;
+			}
+
+			if(secondArgument)
+			{
+				cymbFail(context, "Missing argument node.");
+			}
+
+			break;
+		}
+
+		case CYMB_NODE_ARRAY_SUBSCRIPT:
+		{
+			cymbCompareNodes(first->arraySubscriptNode.name, second->arraySubscriptNode.name, context, nodeCount);
+			cymbCompareNodes(first->arraySubscriptNode.expression, second->arraySubscriptNode.expression, context, nodeCount);
+
+			break;
+		}
+
+		case CYMB_NODE_MEMBER_ACCESS:
+		{
+			if(first->memberAccessNode.type != second->memberAccessNode.type)
+			{
+				cymbFail(context, "Wrong member access type.");
+			}
+
+			cymbCompareNodes(first->memberAccessNode.name, second->memberAccessNode.name, context, nodeCount);
+			cymbCompareNodes(first->memberAccessNode.member, second->memberAccessNode.member, context, nodeCount);
+
+			break;
+		}
+
+		case CYMB_NODE_POSTFIX_OPERATOR:
+		{
+			if(first->postfixOperatorNode.operator != second->postfixOperatorNode.operator)
+			{
+				cymbFail(context, "Wrong postfix operator.");
+			}
+
+			cymbCompareNodes(first->postfixOperatorNode.node, second->postfixOperatorNode.node, context, nodeCount);
+
+			break;
+		}
+
 		case CYMB_NODE_WHILE:
 		{
 			cymbCompareNodes(first->whileNode.expression, second->whileNode.expression, context, nodeCount);
@@ -496,6 +558,8 @@ static void cymbTestExpressions(CymbTestContext* const context)
 	const CymbConstString test4String = CYMB_STRING("-~0 * (*&a - ++!(--+b))");
 	const CymbConstString test5String = CYMB_STRING("a += b * 5 * 3 = 1 + 2");
 	const CymbConstString test6String = CYMB_STRING("a * (b + c");
+	const CymbConstString test7String = CYMB_STRING("square(5) * (add(a, 2) - accumulate(1, b, 3, c))");
+	const CymbConstString test8String = CYMB_STRING("array[0][other[1](2, 3)]");
 
 	CymbTreeTest tests[] = {
 		{{
@@ -1284,7 +1348,337 @@ static void cymbTestExpressions(CymbTestContext* const context)
 				}
 			},
 			.count = 6
-		}, CYMB_INVALID, {}, {}, 6}
+		}, CYMB_INVALID, {}, {}, 6},
+		{{
+			.tokens = (CymbToken[]){
+				{
+					.type = CYMB_TOKEN_IDENTIFIER,
+					.info = {
+						.position = {1, 1},
+						.line = test7String,
+						.hint = {test7String.string + 0, 6}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_OPEN_PARENTHESIS,
+					.info = {
+						.position = {1, 7},
+						.line = test7String,
+						.hint = {test7String.string + 6, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_CONSTANT,
+					.constant = {CYMB_CONSTANT_INT, 5},
+					.info = {
+						.position = {1, 8},
+						.line = test7String,
+						.hint = {test7String.string + 7, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_CLOSE_PARENTHESIS,
+					.info = {
+						.position = {1, 9},
+						.line = test7String,
+						.hint = {test7String.string + 8, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_STAR,
+					.info = {
+						.position = {1, 11},
+						.line = test7String,
+						.hint = {test7String.string + 10, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_OPEN_PARENTHESIS,
+					.info = {
+						.position = {1, 13},
+						.line = test7String,
+						.hint = {test7String.string + 12, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_IDENTIFIER,
+					.info = {
+						.position = {1, 14},
+						.line = test7String,
+						.hint = {test7String.string + 13, 3}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_OPEN_PARENTHESIS,
+					.info = {
+						.position = {1, 17},
+						.line = test7String,
+						.hint = {test7String.string + 16, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_IDENTIFIER,
+					.info = {
+						.position = {1, 18},
+						.line = test7String,
+						.hint = {test7String.string + 17, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_COMMA,
+					.info = {
+						.position = {1, 19},
+						.line = test7String,
+						.hint = {test7String.string + 18, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_CONSTANT,
+					.constant = {CYMB_CONSTANT_INT, 2},
+					.info = {
+						.position = {1, 21},
+						.line = test7String,
+						.hint = {test7String.string + 20, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_CLOSE_PARENTHESIS,
+					.info = {
+						.position = {1, 22},
+						.line = test7String,
+						.hint = {test7String.string + 21, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_MINUS,
+					.info = {
+						.position = {1, 24},
+						.line = test7String,
+						.hint = {test7String.string + 23, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_IDENTIFIER,
+					.info = {
+						.position = {1, 26},
+						.line = test7String,
+						.hint = {test7String.string + 25, 10}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_OPEN_PARENTHESIS,
+					.info = {
+						.position = {1, 36},
+						.line = test7String,
+						.hint = {test7String.string + 35, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_CONSTANT,
+					.constant = {CYMB_CONSTANT_INT, 1},
+					.info = {
+						.position = {1, 37},
+						.line = test7String,
+						.hint = {test7String.string + 36, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_COMMA,
+					.info = {
+						.position = {1, 38},
+						.line = test7String,
+						.hint = {test7String.string + 37, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_IDENTIFIER,
+					.info = {
+						.position = {1, 40},
+						.line = test7String,
+						.hint = {test7String.string + 39, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_COMMA,
+					.info = {
+						.position = {1, 41},
+						.line = test7String,
+						.hint = {test7String.string + 40, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_CONSTANT,
+					.constant = {CYMB_CONSTANT_INT, 3},
+					.info = {
+						.position = {1, 43},
+						.line = test7String,
+						.hint = {test7String.string + 42, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_COMMA,
+					.info = {
+						.position = {1, 44},
+						.line = test7String,
+						.hint = {test7String.string + 43, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_IDENTIFIER,
+					.info = {
+						.position = {1, 46},
+						.line = test7String,
+						.hint = {test7String.string + 45, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_CLOSE_PARENTHESIS,
+					.info = {
+						.position = {1, 47},
+						.line = test7String,
+						.hint = {test7String.string + 46, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_CLOSE_PARENTHESIS,
+					.info = {
+						.position = {1, 48},
+						.line = test7String,
+						.hint = {test7String.string + 47, 1}
+					}
+				},
+			},
+			.count = 24
+		}, CYMB_SUCCESS, {}, {}, 24},
+		{{
+			.tokens = (CymbToken[]){
+				{
+					.type = CYMB_TOKEN_IDENTIFIER,
+					.info = {
+						.position = {1, 1},
+						.line = test8String,
+						.hint = {test8String.string + 0, 5}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_OPEN_BRACKET,
+					.info = {
+						.position = {1, 6},
+						.line = test8String,
+						.hint = {test8String.string + 5, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_CONSTANT,
+					.constant = {CYMB_CONSTANT_INT, 0},
+					.info = {
+						.position = {1, 7},
+						.line = test8String,
+						.hint = {test8String.string + 6, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_CLOSE_BRACKET,
+					.info = {
+						.position = {1, 8},
+						.line = test8String,
+						.hint = {test8String.string + 7, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_OPEN_BRACKET,
+					.info = {
+						.position = {1, 9},
+						.line = test8String,
+						.hint = {test8String.string + 8, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_IDENTIFIER,
+					.info = {
+						.position = {1, 10},
+						.line = test8String,
+						.hint = {test8String.string + 9, 5}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_OPEN_BRACKET,
+					.info = {
+						.position = {1, 15},
+						.line = test8String,
+						.hint = {test8String.string + 14, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_CONSTANT,
+					.constant = {CYMB_CONSTANT_INT, 1},
+					.info = {
+						.position = {1, 16},
+						.line = test8String,
+						.hint = {test8String.string + 15, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_CLOSE_BRACKET,
+					.info = {
+						.position = {1, 17},
+						.line = test8String,
+						.hint = {test8String.string + 16, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_OPEN_PARENTHESIS,
+					.info = {
+						.position = {1, 18},
+						.line = test8String,
+						.hint = {test8String.string + 17, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_CONSTANT,
+					.constant = {CYMB_CONSTANT_INT, 2},
+					.info = {
+						.position = {1, 19},
+						.line = test8String,
+						.hint = {test8String.string + 18, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_COMMA,
+					.info = {
+						.position = {1, 20},
+						.line = test8String,
+						.hint = {test8String.string + 19, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_CONSTANT,
+					.constant = {CYMB_CONSTANT_INT, 3},
+					.info = {
+						.position = {1, 22},
+						.line = test8String,
+						.hint = {test8String.string + 21, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_CLOSE_PARENTHESIS,
+					.info = {
+						.position = {1, 23},
+						.line = test8String,
+						.hint = {test8String.string + 22, 1}
+					}
+				},
+				{
+					.type = CYMB_TOKEN_CLOSE_BRACKET,
+					.info = {
+						.position = {1, 24},
+						.line = test8String,
+						.hint = {test8String.string + 23, 1}
+					}
+				}
+			},
+			.count = 15
+		}, CYMB_SUCCESS, {}, {}, 15}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
 
@@ -1859,6 +2253,188 @@ static void cymbTestExpressions(CymbTestContext* const context)
 		}
 	};
 	tests[6].diagnostics.start = diagnostics6;
+
+	CymbNode nodes7[] = {
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[7].tokens.tokens[0].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = tests[7].tokens.tokens[2].constant,
+			.info = tests[7].tokens.tokens[2].info
+		},
+		{
+			.type = CYMB_NODE_FUNCTION_CALL,
+			.functionCallNode = {.name = nodes7 + 0},
+			.info = nodes7[0].info
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[7].tokens.tokens[6].info
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[7].tokens.tokens[8].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = tests[7].tokens.tokens[10].constant,
+			.info = tests[7].tokens.tokens[10].info
+		},
+		{
+			.type = CYMB_NODE_FUNCTION_CALL,
+			.functionCallNode = {.name = nodes7 + 3},
+			.info = nodes7[3].info
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[7].tokens.tokens[13].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = tests[7].tokens.tokens[15].constant,
+			.info = tests[7].tokens.tokens[15].info
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[7].tokens.tokens[17].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = tests[7].tokens.tokens[19].constant,
+			.info = tests[7].tokens.tokens[19].info
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[7].tokens.tokens[21].info
+		},
+		{
+			.type = CYMB_NODE_FUNCTION_CALL,
+			.functionCallNode = {.name = nodes7 + 7},
+			.info = nodes7[7].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_SUBTRACTION,
+				.leftNode = nodes7 + 6,
+				.rightNode = nodes7 + 12
+			},
+			.info = tests[7].tokens.tokens[12].info
+		},
+		{
+			.type = CYMB_NODE_BINARY_OPERATOR,
+			.binaryOperatorNode = {
+				.operator = CYMB_BINARY_OPERATOR_MULTIPLICATION,
+				.leftNode = nodes7 + 2,
+				.rightNode = nodes7 + 13
+			},
+			.info = tests[7].tokens.tokens[4].info
+		}
+	};
+	CymbNodeChild children7[] = {
+		{
+			.node = nodes7 + 1
+		},
+		{
+			.node = nodes7 + 4,
+			.next = children7 + 2
+		},
+		{
+			.node = nodes7 + 5
+		},
+		{
+			.node = nodes7 + 8,
+			.next = children7 + 4
+		},
+		{
+			.node = nodes7 + 9,
+			.next = children7 + 5
+		},
+		{
+			.node = nodes7 + 10,
+			.next = children7 + 6
+		},
+		{
+			.node = nodes7 + 11
+		}
+	};
+	nodes7[2].functionCallNode.arguments = children7 + 0;
+	nodes7[6].functionCallNode.arguments = children7 + 1;
+	nodes7[12].functionCallNode.arguments = children7 + 3;
+	tests[7].solution.root = nodes7 + 14;
+
+	CymbNode nodes8[] = {
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[8].tokens.tokens[0].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = tests[8].tokens.tokens[2].constant,
+			.info = tests[8].tokens.tokens[2].info
+		},
+		{
+			.type = CYMB_NODE_ARRAY_SUBSCRIPT,
+			.arraySubscriptNode = {
+				.name = nodes8 + 0,
+				.expression = nodes8 + 1
+			},
+			.info = nodes8[0].info
+		},
+		{
+			.type = CYMB_NODE_IDENTIFIER,
+			.info = tests[8].tokens.tokens[5].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = tests[8].tokens.tokens[7].constant,
+			.info = tests[8].tokens.tokens[7].info
+		},
+		{
+			.type = CYMB_NODE_ARRAY_SUBSCRIPT,
+			.arraySubscriptNode = {
+				.name = nodes8 + 3,
+				.expression = nodes8 + 4
+			},
+			.info = nodes8[3].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = tests[8].tokens.tokens[10].constant,
+			.info = tests[8].tokens.tokens[10].info
+		},
+		{
+			.type = CYMB_NODE_CONSTANT,
+			.constantNode = tests[8].tokens.tokens[12].constant,
+			.info = tests[8].tokens.tokens[12].info
+		},
+		{
+			.type = CYMB_NODE_FUNCTION_CALL,
+			.functionCallNode = {.name = nodes8 + 5},
+			.info = nodes8[5].info
+		},
+		{
+			.type = CYMB_NODE_ARRAY_SUBSCRIPT,
+			.arraySubscriptNode = {
+				.name = nodes8 + 2,
+				.expression = nodes8 + 8
+			},
+			.info = nodes8[2].info
+		}
+	};
+	CymbNodeChild children8[] = {
+		{
+			.node = nodes8 + 6,
+			.next = children8 + 1
+		},
+		{
+			.node = nodes8 + 7
+		}
+	};
+	nodes8[8].functionCallNode.arguments = children8 + 0;
+	tests[8].solution.root = nodes8 + 9;
 
 	for(size_t testIndex = 0; testIndex < testCount; ++testIndex)
 	{
