@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24 FATAL_ERROR)
 
 project(
 	Cymb
-	LANGUAGES C
+	LANGUAGES C ASM
 	VERSION 0.1.0
 )
 
@@ -15,6 +15,7 @@ set(CMAKE_C_EXTENSIONS OFF)
 set(CYMB_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/$<CONFIG>)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY $<1:${CYMB_OUTPUT_DIRECTORY}>)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY $<1:${CYMB_OUTPUT_DIRECTORY}>)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY $<1:${CYMB_OUTPUT_DIRECTORY}>)
 
 # Cymb library.
 configure_file(include/cymb/version.h.in include/cymb/version.h @ONLY)
@@ -50,9 +51,49 @@ target_include_directories(cymb_lib PUBLIC include ${CMAKE_BINARY_DIR}/include)
 add_executable(cymb source/main.c)
 target_link_libraries(cymb PRIVATE cymb_lib)
 
-enable_testing()
+# Cymb libc.
+add_library(
+	cymb_libc
+	SHARED
+	source/libc/fcntl.s
+	source/libc/stdio.c
+	source/libc/string.s
+	source/libc/unistd.s
+)
+
+if(MSVC)
+	target_compile_options(cymb_libc PRIVATE /W4 /utf-8)
+	target_compile_definitions(cymb_libc PRIVATE _CRT_SECURE_NO_WARNINGS)
+else()
+	target_compile_options(cymb_libc PRIVATE -Wall -Wextra -pedantic -nostdinc)
+	target_link_options(cymb_libc PRIVATE -nostdlib)
+endif()
+
+if(WIN32)
+	target_compile_definitions(cymb_libc PRIVATE UNICODE _UNICODE)
+endif()
+
+target_include_directories(cymb_libc PRIVATE include/libc)
+
+# Cymb crt0.
+
+add_library(
+	cymb_crt0
+	OBJECT
+	source/libc/crt0.s
+)
+
+add_custom_target(
+	cymb_crt0_copy
+	ALL
+	DEPENDS cymb_crt0
+	COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_OBJECTS:cymb_crt0> ${CYMB_OUTPUT_DIRECTORY}/crt0.o
+	COMMAND_EXPAND_LISTS
+)
 
 # Cymb test.
+enable_testing()
+
 add_executable(
 	cymb_test
 	test/test.c
