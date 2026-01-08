@@ -6,6 +6,18 @@ project(
 	VERSION 0.1.0
 )
 
+if(NOT CMAKE_C_BYTE_ORDER STREQUAL "LITTLE_ENDIAN")
+	message(FATAL_ERROR "Cymb only supports little endian systems.")
+endif()
+
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Windows" AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+	message(FATAL_ERROR "Cymb only supports Linux and Windows.")
+endif()
+
+if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+	message(FATAL_ERROR "Cymb only supports 64-bit systems.")
+endif()
+
 set(CMAKE_COMPILE_WARNING_AS_ERROR ON)
 
 set(CMAKE_C_STANDARD 23)
@@ -26,6 +38,7 @@ add_library(
 	source/cymb/assembly.c
 	source/cymb/cymb.c
 	source/cymb/diagnostic.c
+	source/cymb/elf.c
 	source/cymb/lex.c
 	source/cymb/memory.c
 	source/cymb/options.c

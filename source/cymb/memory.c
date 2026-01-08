@@ -19,25 +19,9 @@ void* cymbFind(const void* const valueVoid, const void* const arrayVoid, const s
 
 constexpr size_t cymbRegionSize = 0x4000;
 
-CymbResult cymbArenaCreate(CymbArena* const arena)
+void cymbArenaCreate(CymbArena* const arena)
 {
-	CymbRegion* const region = malloc(sizeof(*region) + cymbRegionSize);
-	if(!region)
-	{
-		cymbArenaFree(arena);
-		return CYMB_OUT_OF_MEMORY;
-	}
-
-	*region = (CymbRegion){
-		.capacity = cymbRegionSize
-	};
-
-	*arena = (CymbArena){
-		.start = region,
-		.end = region
-	};
-
-	return CYMB_SUCCESS;
+	*arena = (CymbArena){};
 }
 
 void cymbArenaFree(CymbArena* const arena)
@@ -55,7 +39,7 @@ void cymbArenaFree(CymbArena* const arena)
 	*arena = (CymbArena){};
 }
 
-void* cymbArenaGet(CymbArena* const arena, const size_t size, const size_t alignment)
+void* cymbArenaAllocate(CymbArena* const arena, const size_t size, const size_t alignment)
 {
 	CymbRegion* region = arena->end;
 	while(region)
@@ -98,7 +82,14 @@ void* cymbArenaGet(CymbArena* const arena, const size_t size, const size_t align
 		.capacity = capacity
 	};
 
-	arena->end->next = region;
+	if(arena->end)
+	{
+		arena->end->next = region;
+	}
+	else
+	{
+		arena->start = region;
+	}
 	arena->end = region;
 
 	return region->data;
@@ -120,16 +111,23 @@ CymbArenaSave cymbArenaSave(CymbArena* const arena)
 {
 	return (CymbArenaSave){
 		.region = arena->end,
-		.size = arena->end->size
+		.size = arena->end ? arena->end->size : 0
 	};
 }
 
 void cymbArenaRestore(CymbArena* const arena, const CymbArenaSave save)
 {
+	if(save.region)
+	{
+		save.region->size = save.size;
+	}
+	else
+	{
+		arena->start = save.region;
+	}
 	arena->end = save.region;
-	arena->end->size = save.size;
 
-	CymbRegion* region = save.region->next;
+	CymbRegion* region = save.region ? save.region->next : nullptr;
 	while(region)
 	{
 		region->size = 0;
@@ -210,7 +208,7 @@ CymbResult cymbMapCreate(CymbMap* const map, CymbArena* const arena, const size_
 		.arena = arena
 	};
 
-	map->bins = cymbArenaGet(map->arena, binCount * sizeof(map->bins[0]), alignof(typeof(map->bins[0])));
+	map->bins = cymbArenaAllocate(map->arena, binCount * sizeof(map->bins[0]), alignof(typeof(map->bins[0])));
 	if(!map->bins)
 	{
 		result = CYMB_OUT_OF_MEMORY;
@@ -221,7 +219,7 @@ CymbResult cymbMapCreate(CymbMap* const map, CymbArena* const arena, const size_
 		map->bins[bin].key.string = nullptr;
 	}
 
-	map->binElements = cymbArenaGet(map->arena, binCount * elementSize, elementAlignment);
+	map->binElements = cymbArenaAllocate(map->arena, binCount * elementSize, elementAlignment);
 	if(!map->binElements)
 	{
 		result = CYMB_OUT_OF_MEMORY;
@@ -309,7 +307,7 @@ CymbResult cymbMapStore(CymbMap* const map, const CymbStringView key, const void
 		}
 	}
 	
-	CymbMapPair* const next = cymbArenaGet(map->arena, sizeof(*next), alignof(typeof(*next)));
+	CymbMapPair* const next = cymbArenaAllocate(map->arena, sizeof(*next), alignof(typeof(*next)));
 	if(!next)
 	{
 		return CYMB_OUT_OF_MEMORY;
@@ -319,7 +317,7 @@ CymbResult cymbMapStore(CymbMap* const map, const CymbStringView key, const void
 
 	next->key = key;
 
-	next->element = cymbArenaGet(map->arena, map->elementSize, map->elementAlignment);
+	next->element = cymbArenaAllocate(map->arena, map->elementSize, map->elementAlignment);
 	memcpy(next->element, element, map->elementSize);
 
 	pair->next = next;

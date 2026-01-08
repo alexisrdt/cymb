@@ -300,7 +300,7 @@ void cymbDiagnosticListFree(CymbDiagnosticList* const diagnostics)
 
 CymbResult cymbDiagnosticAdd(CymbDiagnosticList* const diagnostics, const CymbDiagnostic* const diagnostic)
 {
-	CymbDiagnostic* const result = cymbArenaGet(diagnostics->arena, sizeof(*diagnostic), alignof(typeof(*diagnostic)));
+	CymbDiagnostic* const result = cymbArenaAllocate(diagnostics->arena, sizeof(*diagnostic), alignof(typeof(*diagnostic)));
 	if(!result)
 	{
 		return CYMB_OUT_OF_MEMORY;

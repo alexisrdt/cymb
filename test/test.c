@@ -9,7 +9,7 @@
 
 void cymbContextPush(CymbTestContext* const context, const char* const string)
 {
-	CymbTestNode* const node = cymbArenaGet(&context->arena, sizeof(*node), alignof(typeof(*node)));
+	CymbTestNode* const node = cymbArenaAllocate(&context->arena, sizeof(*node), alignof(typeof(*node)));
 	if(!node)
 	{
 		context->passed = false;
@@ -446,11 +446,7 @@ static void cymbTestMap(CymbTestContext* const context)
 int main(void)
 {
 	CymbTestContext context = {.passed = true};
-	if(cymbArenaCreate(&context.arena) != CYMB_SUCCESS)
-	{
-		context.passed = false;
-		goto end;
-	}
+	cymbArenaCreate(&context.arena);
 	cymbDiagnosticListCreate(&context.diagnostics, &context.arena, "cymb_test", 4);
 
 	cymbTestTab(&context);
@@ -469,6 +465,5 @@ int main(void)
 
 	cymbArenaFree(&context.arena);
 
-	end:
 	return context.passed ? EXIT_SUCCESS : EXIT_FAILURE;
 }

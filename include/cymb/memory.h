@@ -197,12 +197,8 @@ typedef struct CymbArenaSave
  *
  * Parameters:
  * - arena: The arena.
- *
- * Returns:
- * - CYMB_SUCCESS on success.
- * - CYMB_OUT_OF_MEMORY if memory allocation failed.
  */
-CymbResult cymbArenaCreate(CymbArena* arena);
+void cymbArenaCreate(CymbArena* arena);
 
 /*
  * Free an arena.
@@ -213,7 +209,7 @@ CymbResult cymbArenaCreate(CymbArena* arena);
 void cymbArenaFree(CymbArena* arena);
 
 /*
- * Get a chunk of memory from an arena.
+ * Allocate a chunk of memory from an arena.
  *
  * Parameters:
  * - arena: The arena.
@@ -224,7 +220,7 @@ void cymbArenaFree(CymbArena* arena);
  * - A pointer to a chunk of memory on success.
  * - nullptr if memory allocation failed.
  */
-void* cymbArenaGet(CymbArena* arena, size_t size, size_t alignment);
+void* cymbArenaAllocate(CymbArena* arena, size_t size, size_t alignment);
 
 /*
  * Clear the arena.

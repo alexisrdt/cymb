@@ -18,7 +18,7 @@
  */
 static CymbResult cymbCreateChild(CymbTree* const tree, CymbNodeChild** const child)
 {
-	CymbNodeChild* const newChild = cymbArenaGet(tree->arena, sizeof(*newChild), alignof(typeof(*newChild)));
+	CymbNodeChild* const newChild = cymbArenaAllocate(tree->arena, sizeof(*newChild), alignof(typeof(*newChild)));
 	if(!newChild)
 	{
 		return CYMB_OUT_OF_MEMORY;
@@ -51,7 +51,7 @@ static CymbResult cymbCreateChild(CymbTree* const tree, CymbNodeChild** const ch
  */
 static CymbResult cymbAddNode(CymbTree* const tree, const CymbNode* const node)
 {
-	tree->root = cymbArenaGet(tree->arena, sizeof(*node), alignof(typeof(*node)));
+	tree->root = cymbArenaAllocate(tree->arena, sizeof(*node), alignof(typeof(*node)));
 	if(!tree->root)
 	{
 		return CYMB_OUT_OF_MEMORY;

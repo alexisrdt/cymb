@@ -3,6 +3,7 @@
 
 #include "cymb/assembly.h"
 #include "cymb/diagnostic.h"
+#include "cymb/elf.h"
 #include "cymb/lex.h"
 #include "cymb/memory.h"
 #include "cymb/options.h"

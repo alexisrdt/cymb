@@ -169,22 +169,14 @@ static CymbResult cymbCompile(CymbArena* const arena, CymbDiagnosticList* const 
 CymbResult cymbMain(const CymbConstString* const arguments, const size_t argumentCount)
 {
 	CymbArena arena;
-	CymbResult result = cymbArenaCreate(&arena);
-	if(result != CYMB_SUCCESS)
-	{
-		goto end;
-	}
+	cymbArenaCreate(&arena);
 
 	CymbDiagnosticList diagnostics;
 	cymbDiagnosticListCreate(&diagnostics, &arena, nullptr, 8);
-	if(result != CYMB_SUCCESS)
-	{
-		goto end;
-	}
 
 	// Parse arguments.
 	CymbOptions options;
-	result = cymbParseArguments(arguments, argumentCount, &options, &diagnostics);
+	CymbResult result = cymbParseArguments(arguments, argumentCount, &options, &diagnostics);
 	diagnostics.tabWidth = options.tabWidth;
 
 	cymbDiagnosticListPrint(&diagnostics);
@@ -412,6 +404,5 @@ CymbResult cymbMain(const CymbConstString* const arguments, const size_t argumen
 	free(options.inputs);
 	cymbArenaFree(&arena);
 
-	end:
 	return result;
 }
