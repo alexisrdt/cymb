@@ -15,7 +15,7 @@ typedef struct CymbElfFile
 	Elf64_Xword sectionCount;
 } CymbElfFile;
 
-CymbResult cymbCreateObjectFile(const char* const fileName, const CymbObjectFileData* const data)
+CymbResult cymbCreateObjectFile(CymbArena* const arena, const char* const fileName, const CymbObjectFileData* const data)
 {
 	CymbResult result = CYMB_SUCCESS;
 
@@ -65,7 +65,7 @@ CymbResult cymbCreateObjectFile(const char* const fileName, const CymbObjectFile
 	size += data->dataSize > 0 ? sizeof(Elf64_Shdr) : 0;
 	size += data->bssSize > 0 ? sizeof(Elf64_Shdr) : 0;
 
-	unsigned char* bytes = malloc(size);
+	unsigned char* bytes = cymbArenaAllocate(arena, size, alignof(typeof(bytes[0])));
 	if(!bytes)
 	{
 		return CYMB_OUT_OF_MEMORY;
@@ -212,18 +212,14 @@ CymbResult cymbCreateObjectFile(const char* const fileName, const CymbObjectFile
 	FILE* const file = fopen(fileName, "wb");
 	if(!file)
 	{
-		free(bytesStart);
 		return CYMB_OUT_OF_MEMORY;
 	}
 
 	if(fwrite(bytesStart, 1, size, file) != size)
 	{
-		free(bytesStart);
 		fclose(file);
 		return CYMB_OUT_OF_MEMORY;
 	}
-
-	free(bytesStart);
 
 	if(fclose(file) != 0)
 	{
@@ -454,7 +450,7 @@ CymbResult cymbLink(const char* const* const fileNames, const size_t count, Cymb
 		}
 
 		const long sizeLong = ftell(file);
-		if(sizeLong <= 0 || (unsigned long)sizeLong >= cymbSizeMax)
+		if(sizeLong <= 0 || (uintmax_t)sizeLong >= cymbSizeMax)
 		{
 			result = CYMB_OUT_OF_MEMORY;
 			fclose(file);

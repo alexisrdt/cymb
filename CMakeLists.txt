@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.24 FATAL_ERROR)
+cmake_minimum_required(VERSION 4.0 FATAL_ERROR)
 
 project(
 	Cymb
@@ -10,7 +10,7 @@ if(NOT CMAKE_C_BYTE_ORDER STREQUAL "LITTLE_ENDIAN")
 	message(FATAL_ERROR "Cymb only supports little endian systems.")
 endif()
 
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Windows" AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+if(NOT WIN32 AND NOT LINUX)
 	message(FATAL_ERROR "Cymb only supports Linux and Windows.")
 endif()
 
@@ -35,6 +35,7 @@ configure_file(include/cymb/version.h.in include/cymb/version.h @ONLY)
 add_library(
 	cymb_lib
 	STATIC
+	source/cymb/arena.c
 	source/cymb/assembly.c
 	source/cymb/cymb.c
 	source/cymb/diagnostic.c
@@ -55,7 +56,23 @@ else()
 endif()
 
 if(WIN32)
-	target_compile_definitions(cymb_lib PUBLIC UNICODE _UNICODE)
+	target_compile_definitions(cymb_lib PUBLIC UNICODE _UNICODE __CYMB_COFF__)
+	if(${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "AMD64")
+		target_compile_definitions(cymb_lib PUBLIC __CYMB_X86_64__)
+	elseif(${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "ARM64")
+		target_compile_definitions(cymb_lib PUBLIC __CYMB_AARCH64__)
+	else()
+		message(FATAL_ERROR "Unrecognized architecture.")
+	endif()
+elseif(LINUX)
+	target_compile_definitions(cymb_lib PUBLIC __CYMB_ELF__)
+	if(${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "x86_64")
+		target_compile_definitions(cymb_lib PUBLIC __CYMB_X86_64__)
+	elseif(${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "aarch64")
+		target_compile_definitions(cymb_lib PUBLIC __CYMB_AARCH64__)
+	else()
+		message(FATAL_ERROR "Unrecognized architecture.")
+	endif()
 endif()
 
 target_include_directories(cymb_lib PUBLIC include ${CMAKE_BINARY_DIR}/include)
@@ -65,44 +82,37 @@ add_executable(cymb source/main.c)
 target_link_libraries(cymb PRIVATE cymb_lib)
 
 # Cymb libc.
-add_library(
-	cymb_libc
-	SHARED
-	source/libc/fcntl.s
-	source/libc/stdio.c
-	source/libc/string.s
-	source/libc/unistd.s
-)
+if(LINUX)
+	add_library(
+		cymb_libc
+		SHARED
+		source/libc/fcntl.s
+		source/libc/stdio.c
+		source/libc/string.s
+		source/libc/unistd.s
+	)
 
-if(MSVC)
-	target_compile_options(cymb_libc PRIVATE /W4 /utf-8)
-	target_compile_definitions(cymb_libc PRIVATE _CRT_SECURE_NO_WARNINGS)
-else()
 	target_compile_options(cymb_libc PRIVATE -Wall -Wextra -pedantic -nostdinc)
 	target_link_options(cymb_libc PRIVATE -nostdlib)
+
+	target_include_directories(cymb_libc PRIVATE include/libc)
+
+	# Cymb crt0.
+
+	add_library(
+		cymb_crt0
+		OBJECT
+		source/libc/crt0.s
+	)
+
+	add_custom_target(
+		cymb_crt0_copy
+		ALL
+		DEPENDS cymb_crt0
+		COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_OBJECTS:cymb_crt0> ${CYMB_OUTPUT_DIRECTORY}/crt0.o
+		COMMAND_EXPAND_LISTS
+	)
 endif()
-
-if(WIN32)
-	target_compile_definitions(cymb_libc PRIVATE UNICODE _UNICODE)
-endif()
-
-target_include_directories(cymb_libc PRIVATE include/libc)
-
-# Cymb crt0.
-
-add_library(
-	cymb_crt0
-	OBJECT
-	source/libc/crt0.s
-)
-
-add_custom_target(
-	cymb_crt0_copy
-	ALL
-	DEPENDS cymb_crt0
-	COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_OBJECTS:cymb_crt0> ${CYMB_OUTPUT_DIRECTORY}/crt0.o
-	COMMAND_EXPAND_LISTS
-)
 
 # Cymb test.
 enable_testing()

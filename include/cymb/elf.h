@@ -5,7 +5,7 @@
 
 typedef struct CymbObjectFileData
 {
-	void* text;
+	const void* text;
 	size_t textSize;
 
 	const void* data;
@@ -16,7 +16,7 @@ typedef struct CymbObjectFileData
 	size_t bssAlignment;
 } CymbObjectFileData;
 
-CymbResult cymbCreateObjectFile(const char* fileName, const CymbObjectFileData* data);
+CymbResult cymbCreateObjectFile(CymbArena* arena, const char* fileName, const CymbObjectFileData* data);
 
 CymbResult cymbLink(const char* const* fileNames, size_t count, CymbDiagnosticList* diagnostics);
 

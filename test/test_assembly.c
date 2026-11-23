@@ -1,8 +1,6 @@
 #include "cymb/assembly.h"
 
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #include "test.h"
@@ -11,169 +9,108 @@ typedef struct CymbAssemblyTest
 {
 	const CymbConstString assembly;
 	bool success;
-	uint32_t code;
-	CymbDiagnosticList diagnostics;
+	const void* codes;
+	size_t codeSize;
+	const CymbDiagnostic* diagnostics;
+	size_t diagnosticCount;
 } CymbAssemblyTest;
 
-static void cymbDoAssemblyTest(const CymbAssemblyTest* const test, CymbTestContext* const context)
+static void cymbDoAssemblyTest(const CymbAssemblyTest* const test, const CymbMachine machine, CymbTestContext* const context)
 {
 	const CymbArenaSave save = cymbArenaSave(&context->arena);
 
-	uint32_t* codes;
-	size_t count;
+	cymbSegmentedArrayCreate(&context->diagnostics.diagnostics, &context->arena, sizeof(CymbDiagnostic), alignof(CymbDiagnostic));
 
-	CymbResult result = cymbAssemble(test->assembly.string, &codes, &count, &context->diagnostics);
+	char* codes;
+	size_t size;
+
+	CymbResult result = cymbAssemble(test->assembly.string, &codes, &size, machine, &context->diagnostics);
 
 	if(test->success)
 	{
-		if(result != CYMB_SUCCESS || count != 1 || codes[0] != test->code || context->diagnostics.start)
+		if(result != CYMB_SUCCESS || size != test->codeSize || memcmp(codes, test->codes, size) != 0 || context->diagnostics.diagnostics.end)
 		{
 			cymbFail(context, "Wrong result.");
 		}
 
-		free(codes);
-
 		goto end;
 	}
 
-	if(result != CYMB_INVALID || codes != nullptr || count != 0)
+	if(result != CYMB_INVALID || codes != nullptr || size != 0)
 	{
 		cymbFail(context, "Wrong result.");
 	}
 
-	cymbCompareDiagnostics(&context->diagnostics, &test->diagnostics, context);
+	cymbCompareDiagnostics(&context->diagnostics, test->diagnostics, test->diagnosticCount, context);
 
 	end:
 	cymbArenaRestore(&context->arena, save);
-	cymbDiagnosticListFree(&context->diagnostics);
 }
 
-void cymbTestAssemblies(CymbTestContext* const context)
+static void cymbTestX8664Assemblies(CymbTestContext* const context)
 {
 	cymbContextPush(context, __func__);
 
 	CymbAssemblyTest tests[] = {
-		// ABS
+		// ret
 		{
-			.assembly = CYMB_STRING("ABS X0, X1"),
+			.assembly = CYMB_STRING("ret"),
 			.success = true,
-			.code = 0b1101'1010'1100'0000'0010'0000'0010'0000
+			.codes = (const unsigned char[]){0xc3},
+			.codeSize = 1
 		},
 		{
-			.assembly = CYMB_STRING("ABS W1, WZR"),
+			.assembly = CYMB_STRING("ret 1"),
 			.success = true,
-			.code = 0b0101'1010'1100'0000'0010'0011'1110'0001
-		},
-		{
-			.assembly = CYMB_STRING("ABS SP, X0"),
-			.success = false,
-			.diagnostics = {}
-		},
-		{
-			.assembly = CYMB_STRING("ABS X0, SP"),
-			.success = false,
-			.diagnostics = {}
-		},
-		{
-			.assembly = CYMB_STRING("ABS W0, X0"),
-			.success = false,
-			.diagnostics = {}
-		},
-		// ADC
-		{
-			.assembly = CYMB_STRING("ADC W10, W11, W12"),
-			.success = true,
-			.code = 0b0001'1010'0000'1100'0000'0001'0110'1010
-		},
-		// ADCS
-		{
-			.assembly = CYMB_STRING("ADCS X20, X21, X22"),
-			.success = true,
-			.code = 0b1011'1010'0001'0110'0000'0010'1011'0100
-		},
-		// ADD
-		{
-			.assembly = CYMB_STRING("ADD X0, X1, X2"),
-			.success = true,
-			.code = 0b1000'1011'0000'0010'0000'0000'0010'0000
-		},
-		{
-			.assembly = CYMB_STRING("ADD X0, X1, W2, SXTH #1"),
-			.success = true,
-			.code = 0b1000'1011'0010'0010'1010'0100'0010'0000
-		},
-		{
-			.assembly = CYMB_STRING("ADD W0, W1, #57"),
-			.success = true,
-			.code = 0b0001'0001'0000'0000'1110'0100'0010'0000
-		},
-		{
-			.assembly = CYMB_STRING("ADD X0, X1, #4095, LSL #12"),
-			.success = true,
-			.code = 0b1001'0001'0111'1111'1111'1100'0010'0000
-		},
-		{
-			.assembly = CYMB_STRING("ADD X0, X1, #4096"),
-			.success = false,
-			.diagnostics = {}
+			.codes = (const unsigned char[]){0xc2, 0x01, 0x00},
+			.codeSize = 3
 		}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
-
-	CymbDiagnostic diagnostics2[] = {
-		{
-			.type = CYMB_INVALID_SP,
-			.info = {
-				.position = {1, 5},
-				.line = tests[2].assembly,
-				.hint = {tests[2].assembly.string + 4, 2}
-			}
-		}
-	};
-	tests[2].diagnostics.start = diagnostics2;
-
-	CymbDiagnostic diagnostics3[] = {
-		{
-			.type = CYMB_INVALID_SP,
-			.info = {
-				.position = {1, 9},
-				.line = tests[3].assembly,
-				.hint = {tests[3].assembly.string + 8, 2}
-			}
-		}
-	};
-	tests[3].diagnostics.start = diagnostics3;
-
-	CymbDiagnostic diangostics4[] = {
-		{
-			.type = CYMB_INVALID_REGISTER_WIDTH,
-			.info = {
-				.position = {1, 9},
-				.line = tests[4].assembly,
-				.hint = {tests[4].assembly.string + 8, 2}
-			}
-		}
-	};
-	tests[4].diagnostics.start = diangostics4;
-
-	CymbDiagnostic diagnostics11[] = {
-		{
-			.type = CYMB_INVALID_IMMEDIATE,
-			.info = {
-				.position = {1, 13},
-				.line = tests[11].assembly,
-				.hint = {tests[11].assembly.string + 12, 5}
-			}
-		}
-	};
-	tests[11].diagnostics.start = diagnostics11;
 
 	for(size_t testIndex = 0; testIndex < testCount; ++testIndex)
 	{
 		cymbContextSetIndex(context, testIndex);
 
-		cymbDoAssemblyTest(&tests[testIndex], context);
+		cymbDoAssemblyTest(&tests[testIndex], CYMB_X86_64, context);
 	}
 
 	cymbContextPop(context);
+}
+
+static void cymbTestAarch64Assemblies(CymbTestContext* const context)
+{
+	cymbContextPush(context, __func__);
+
+	CymbAssemblyTest tests[] = {
+		// ret
+		{
+			.assembly = CYMB_STRING("ret"),
+			.success = true,
+			.codes = (const unsigned char[]){0xc0, 0x03, 0x5f, 0xd6},
+			.codeSize = sizeof(uint32_t)
+		},
+		{
+			.assembly = CYMB_STRING("ret x12"),
+			.success = true,
+			.codes = (const unsigned char[]){0x80, 0x01, 0x5f, 0xd6},
+			.codeSize = sizeof(uint32_t)
+		}
+	};
+	constexpr size_t testCount = CYMB_LENGTH(tests);
+
+	for(size_t testIndex = 0; testIndex < testCount; ++testIndex)
+	{
+		cymbContextSetIndex(context, testIndex);
+
+		cymbDoAssemblyTest(&tests[testIndex], CYMB_AARCH64, context);
+	}
+
+	cymbContextPop(context);
+}
+
+void cymbTestAssemblies(CymbTestContext* const context)
+{
+	cymbTestX8664Assemblies(context);
+	cymbTestAarch64Assemblies(context);
 }

@@ -262,12 +262,4 @@ CymbResult cymbParseIdentifier(CymbReader* reader, CymbToken* token, CymbDiagnos
  */
 CymbResult cymbLex(const char* string, CymbTokenList* tokens, CymbDiagnosticList* diagnostics);
 
-/*
- * Free a list of tokens.
- *
- * Parameters:
- * - tokens: A list of tokens.
- */
-void cymbFreeTokenList(CymbTokenList* tokens);
-
 #endif

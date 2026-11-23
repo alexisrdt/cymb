@@ -1,7 +1,7 @@
 #ifndef STDINT_H
 #define STDINT_H
 
-#if defined(__linux__)
+#if defined(__CYMB_ELF__)
 typedef unsigned char uint8_t;
 typedef unsigned short uint16_t;
 typedef unsigned int uint32_t;
@@ -11,7 +11,7 @@ typedef signed char int8_t;
 typedef short int16_t;
 typedef int int32_t;
 typedef long int64_t;
-#elif defined(_WIN32)
+#elif defined(__CYMB_COFF__)
 typedef unsigned char uint8_t;
 typedef unsigned short uint16_t;
 typedef unsigned int uint32_t;

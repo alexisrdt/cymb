@@ -18,26 +18,29 @@ int main(int argumentCount, char** arguments)
 	--argumentCount;
 	++arguments;
 
+	CymbArena arena;
+	cymbArenaCreate(&arena);
+
 	// Transform arguments.
 	CymbConstString* stringArguments = nullptr;
 	const size_t stringArgumentCount = argumentCount;
 
 	if(argumentCount > 0)
 	{
-		constexpr size_t maxStringArgumentCount = cymbSizeMax / sizeof(stringArguments[0]);
+		constexpr size_t maxStringArgumentCount = cymbArenaSizeMax / sizeof(stringArguments[0]);
 		if(stringArgumentCount > maxStringArgumentCount)
 		{
 			fputs("Too many arguments.\n", stderr);
 			result = CYMB_INVALID;
-			goto end;
+			goto clear;
 		}
 
-		stringArguments = malloc(stringArgumentCount * sizeof(stringArguments[0]));
+		stringArguments = cymbArenaAllocate(&arena, stringArgumentCount * sizeof(stringArguments[0]), alignof(typeof(stringArguments[0])));
 		if(!stringArguments)
 		{
 			fputs("Out of memory.\n", stderr);
 			result = CYMB_OUT_OF_MEMORY;
-			goto end;
+			goto clear;
 		}
 
 		for(size_t argumentIndex = 0; argumentIndex < stringArgumentCount; ++argumentIndex)
@@ -55,15 +58,15 @@ int main(int argumentCount, char** arguments)
 	}
 
 	// Run Cymb.
-	result = cymbMain(stringArguments, stringArgumentCount);
+	result = cymbMain(&arena, stringArguments, stringArgumentCount);
 	if(result == CYMB_OUT_OF_MEMORY)
 	{
 		fputs("Out of memory.\n", stderr);
 	}
 
 	clear:
-	free(stringArguments);
-
+	cymbArenaFree(&arena);
+	
 	end:
 	return result == CYMB_SUCCESS ? EXIT_SUCCESS : EXIT_FAILURE;
 }

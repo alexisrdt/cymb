@@ -479,12 +479,4 @@ CymbResult cymbParseProgram(CymbTree* tree, CymbTokenList* tokens, CymbDiagnosti
  */
 CymbResult cymbParse(const CymbTokenList* tokens, CymbArena* arena, CymbTree* tree, CymbDiagnosticList* diagnostics);
 
-/*
- * Free a tree.
- *
- * Parameters:
- * - tree: The tree.
- */
-void cymbFreeTree(CymbTree* tree);
-
 #endif

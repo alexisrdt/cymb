@@ -4,14 +4,15 @@
 .global _start
 .type _start, @function
 _start:
-	MOV FP, #0
-	MOV LR, #0
+	mov fp, 0
+	mov lr, 0
 
-	LDR X0, [SP]
+	ldr x0, [sp]
 
-	ADD X1, SP, #8
+	add x1, sp, 8
 
-	BL main
+	bl main
 
-	MOV X8, #93
-	SVC #0
+	mov x8, 93
+	svc 0
+.size _start, . - _start

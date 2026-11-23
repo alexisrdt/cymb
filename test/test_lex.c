@@ -14,7 +14,8 @@ typedef struct CymbLexTest
 	const char* string;
 	CymbResult result;
 	CymbToken solution;
-	CymbDiagnosticList diagnostics;
+	const CymbDiagnostic* diagnostics;
+	size_t diagnosticCount;
 	CymbReader reader;
 } CymbLexTest;
 
@@ -58,40 +59,42 @@ static void cymbCompareTokens(const CymbToken* const first, const CymbToken* con
 	cymbCompareDiagnosticInfo(&first->info, &second->info, context);
 }
 
-void cymbCompareDiagnostics(const CymbDiagnosticList* const first, const CymbDiagnosticList* const second, CymbTestContext* const context)
+void cymbCompareDiagnostics(const CymbDiagnosticList* const first, const CymbDiagnostic* const second, const size_t secondCount,  CymbTestContext* const context)
 {
 	cymbContextPush(context, "diagnostic");
 
-	const CymbDiagnostic* firstDiagnostic = first->start;
-	const CymbDiagnostic* secondDiagnostic = second->start;
+	size_t count = 0;
 
-	size_t diagnosticIndex = 0;
-	while(firstDiagnostic)
+	const CymbSegment* segment = first->diagnostics.end;
+	while(segment)
 	{
-		cymbContextSetIndex(context, diagnosticIndex);
-
-		if(!secondDiagnostic)
+		for(size_t index = 0; index < segment->size; index += first->diagnostics.elementSize, ++count)
 		{
-			cymbFail(context, "Unexpected diagnostic.");
-			goto end;
+			cymbContextSetIndex(context, count);
+
+			if(count >= secondCount)
+			{
+				cymbFail(context, "Unexpected diagnostic.");
+				goto end;
+			}
+
+			const CymbDiagnostic* const firstDiagnostic = (const CymbDiagnostic*)((const char*)segment->segment + index);
+			const CymbDiagnostic* const secondDiagnostic = &second[count];
+
+			if(firstDiagnostic->type != secondDiagnostic->type)
+			{
+				cymbFail(context, "Wrong diagnostic type.");
+			}
+
+			cymbCompareDiagnosticInfo(&firstDiagnostic->info, &secondDiagnostic->info, context);
 		}
 
-		if(firstDiagnostic->type != secondDiagnostic->type)
-		{
-			cymbFail(context, "Wrong diagnostic type.");
-		}
-
-		cymbCompareDiagnosticInfo(&firstDiagnostic->info, &secondDiagnostic->info, context);
-
-		firstDiagnostic = firstDiagnostic->next;
-		secondDiagnostic = secondDiagnostic->next;
-
-		++diagnosticIndex;
+		segment = segment->next;
 	}
 
-	if(secondDiagnostic)
+	if(count < secondCount)
 	{
-		cymbContextSetIndex(context, diagnosticIndex);
+		cymbContextSetIndex(context, count);
 		cymbFail(context, "Missing diagnostic.");
 	}
 
@@ -113,6 +116,8 @@ static void cymbDoLexTest(const CymbLexTest* const test, const CymbLexFunction t
 			.hint.string = reader.string
 		}
 	};
+
+	cymbSegmentedArrayCreate(&context->diagnostics.diagnostics, &context->arena, sizeof(CymbDiagnostic), alignof(CymbDiagnostic));
 
 	const CymbResult result = testFunction(&reader, &token, &context->diagnostics);
 
@@ -146,18 +151,17 @@ static void cymbDoLexTest(const CymbLexTest* const test, const CymbLexFunction t
 	}
 
 	cymbCompareTokens(&token, &test->solution, context);
-	cymbCompareDiagnostics(&context->diagnostics, &test->diagnostics, context);
+	cymbCompareDiagnostics(&context->diagnostics, test->diagnostics, test->diagnosticCount, context);
 
 	end:
 	cymbArenaRestore(&context->arena, save);
-	cymbDiagnosticListFree(&context->diagnostics);
 }
 
 static void cymbTestStrings(CymbTestContext* const context)
 {
 	cymbContextPush(context, __func__);
 
-	CymbLexTest tests[] = {
+	const CymbLexTest tests[] = {
 		{.string = "", .result = CYMB_NO_MATCH, .reader = {
 			.string = tests[0].string,
 			.position = {1, 1},
@@ -197,7 +201,24 @@ static void cymbTestStrings(CymbTestContext* const context)
 				.line = {tests[5].string, 6},
 				.hint = {tests[5].string, 6}
 			}
-		}, .diagnostics = {}, .reader = {
+		}, .diagnostics = (const CymbDiagnostic[]){
+			{
+				.type = CYMB_INVALID_STRING_CHARACTER,
+				.info = {
+					.position = {1, 4},
+					.line = {tests[5].string, 6},
+					.hint = {tests[5].string + 3, 1}
+				}
+			},
+			{
+				.type = CYMB_UNFINISHED_STRING,
+				.info = {
+					.position = {1, 1},
+					.line = {tests[5].string, 6},
+					.hint = {tests[5].string, 6}
+				}
+			}
+		}, .diagnosticCount = 2, .reader = {
 			.string = tests[5].string + 6,
 			.position = {1, 7},
 			.line = {tests[5].string, 6}
@@ -209,46 +230,22 @@ static void cymbTestStrings(CymbTestContext* const context)
 				.line = {tests[6].string, 9},
 				.hint = {tests[6].string, 9}
 			}
-		}, .diagnostics = {}, .reader = {
+		}, .diagnostics = (const CymbDiagnostic[]){
+			{
+				.type = CYMB_UNFINISHED_STRING,
+				.info = {
+					.position = {1, 1},
+					.line = {tests[6].string, 9},
+					.hint = {tests[6].string, 9}
+				}
+			}
+		}, .diagnosticCount = 1, .reader = {
 			.string = tests[6].string + 9,
 			.position = {1, 10},
 			.line = {tests[6].string, 9}
 		}}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
-
-	CymbDiagnostic diagnostics5[] = {
-		{
-			.type = CYMB_INVALID_STRING_CHARACTER,
-			.info = {
-				.position = {1, 4},
-				.line = {tests[5].string, 6},
-				.hint = {tests[5].string + 3, 1}
-			},
-			.next = diagnostics5 + 1
-		},
-		{
-			.type = CYMB_UNFINISHED_STRING,
-			.info = {
-				.position = {1, 1},
-				.line = {tests[5].string, 6},
-				.hint = {tests[5].string, 6}
-			}
-		}
-	};
-	tests[5].diagnostics.start = diagnostics5;
-
-	CymbDiagnostic diagnostics6[] = {
-		{
-			.type = CYMB_UNFINISHED_STRING,
-			.info = {
-				.position = {1, 1},
-				.line = {tests[6].string, 9},
-				.hint = {tests[6].string, 9}
-			}
-		}
-	};
-	tests[6].diagnostics.start = diagnostics6;
 
 	for(size_t testIndex = 0; testIndex < testCount; ++testIndex)
 	{
@@ -264,7 +261,7 @@ static void cymbTestCharacters(CymbTestContext* const context)
 {
 	cymbContextPush(context, __func__);
 
-	CymbLexTest tests[] = {
+	const CymbLexTest tests[] = {
 		{.string = "", .result = CYMB_NO_MATCH, .reader = {
 			.string = tests[0].string,
 			.position = {1, 1},
@@ -317,25 +314,22 @@ static void cymbTestCharacters(CymbTestContext* const context)
 				.line = {tests[6].string, 2},
 				.hint = {tests[6].string, 2}
 			}
-		}, .diagnostics = {}, .reader = {
+		}, .diagnostics = (const CymbDiagnostic[]){
+			{
+				.type = CYMB_INVALID_CHARACTER_CONSTANT,
+				.info = {
+					.position = {1, 1},
+					.line = {tests[6].string, 2},
+					.hint = {tests[6].string, 2}
+				}
+			}
+		}, .diagnosticCount = 1, .reader = {
 			.string = tests[6].string + 2,
 			.position = {1, 3},
 			.line = {tests[6].string, 2}
 		}}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
-
-	CymbDiagnostic diagnostics6[] = {
-		{
-			.type = CYMB_INVALID_CHARACTER_CONSTANT,
-			.info = {
-				.position = {1, 1},
-				.line = {tests[6].string, 2},
-				.hint = {tests[6].string, 2}
-			}
-		}
-	};
-	tests[6].diagnostics.start = diagnostics6;
 
 	for(size_t testIndex = 0; testIndex < testCount; ++testIndex)
 	{
@@ -523,7 +517,16 @@ static void cymbTestConstants(CymbTestContext* const context)
 				.line = {tests[8].string, 4},
 				.hint = {tests[8].string, 4}
 			}
-		}, .diagnostics = {}, .reader = {
+		}, .diagnostics = (const CymbDiagnostic[]){
+			{
+				.type = CYMB_INVALID_CONSTANT_SUFFIX,
+				.info = {
+					.position = {1, 2},
+					.line = {tests[8].string, 4},
+					.hint = {tests[8].string + 1, 3}
+				}
+			}
+		}, .diagnosticCount = 1, .reader = {
 			.string = tests[8].string + 4,
 			.position = {1, 5},
 			.line = {tests[8].string, 4}
@@ -549,7 +552,40 @@ static void cymbTestConstants(CymbTestContext* const context)
 				.line = {tests[10].string, 13},
 				.hint = {tests[10].string, 13}
 			}
-		}, .diagnostics = {}, .reader = {
+		}, .diagnostics = (const CymbDiagnostic[]){
+			{
+				.type = CYMB_SEPARATOR_AFTER_BASE,
+				.info = {
+					.position = {1, 3},
+					.line = {tests[10].string, 13},
+					.hint = {tests[10].string + 2, 1}
+				}
+			},
+			{
+				.type = CYMB_DUPLICATE_SEPARATORS,
+				.info = {
+					.position = {1, 6},
+					.line = {tests[10].string, 13},
+					.hint = {tests[10].string + 5, 2}
+				}
+			},
+			{
+				.type = CYMB_DUPLICATE_SEPARATORS,
+				.info = {
+					.position = {1, 9},
+					.line = {tests[10].string, 13},
+					.hint = {tests[10].string + 8, 3}
+				}
+			},
+			{
+				.type = CYMB_TRAILING_SEPARATOR,
+				.info = {
+					.position = {1, 13},
+					.line = {tests[10].string, 13},
+					.hint = {tests[10].string + 12, 1}
+				}
+			}
+		}, .diagnosticCount = 4, .reader = {
 			.string = tests[10].string + 13,
 			.position = {1, 14},
 			.line = {tests[10].string, 13}
@@ -562,7 +598,40 @@ static void cymbTestConstants(CymbTestContext* const context)
 				.line = {tests[11].string, 13},
 				.hint = {tests[11].string, 13}
 			}
-		}, .diagnostics = {}, .reader = {
+		}, .diagnostics = (const CymbDiagnostic[]){
+			{
+				.type = CYMB_SEPARATOR_AFTER_BASE,
+				.info = {
+					.position = {1, 3},
+					.line = {tests[11].string, 13},
+					.hint = {tests[11].string + 2, 1}
+				}
+			},
+			{
+				.type = CYMB_DUPLICATE_SEPARATORS,
+				.info = {
+					.position = {1, 3},
+					.line = {tests[11].string, 13},
+					.hint = {tests[11].string + 2, 3}
+				}
+			},
+			{
+				.type = CYMB_DUPLICATE_SEPARATORS,
+				.info = {
+					.position = {1, 9},
+					.line = {tests[11].string, 13},
+					.hint = {tests[11].string + 8, 3}
+				}
+			},
+			{
+				.type = CYMB_TRAILING_SEPARATOR,
+				.info = {
+					.position = {1, 11},
+					.line = {tests[11].string, 13},
+					.hint = {tests[11].string + 10, 1}
+				}
+			}
+		}, .diagnosticCount = 4, .reader = {
 			.string = tests[11].string + 13,
 			.position = {1, 14},
 			.line = {tests[11].string, 13}
@@ -575,7 +644,16 @@ static void cymbTestConstants(CymbTestContext* const context)
 				.line = {tests[12].string, 4},
 				.hint = {tests[12].string, 2}
 			}
-		}, .diagnostics = {}, .reader = {
+		}, .diagnostics = (const CymbDiagnostic[]){
+			{
+				.type = CYMB_INVALID_CONSTANT_SUFFIX,
+				.info = {
+					.position = {1, 2},
+					.line = {tests[12].string, 4},
+					.hint = {tests[12].string + 1, 1}
+				}
+			}
+		}, .diagnosticCount = 1, .reader = {
 			.string = tests[12].string + 2,
 			.position = {1, 3},
 			.line = {tests[12].string, 4}
@@ -605,108 +683,6 @@ static void cymbTestConstants(CymbTestContext* const context)
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
 
-	CymbDiagnostic diagnostics8[] = {
-		{
-			.type = CYMB_INVALID_CONSTANT_SUFFIX,
-			.info = {
-				.position = {1, 2},
-				.line = {tests[8].string, 4},
-				.hint = {tests[8].string + 1, 3}
-			}
-		}
-	};
-	tests[8].diagnostics.start = diagnostics8;
-
-	CymbDiagnostic diagnostics10[] = {
-		{
-			.type = CYMB_SEPARATOR_AFTER_BASE,
-			.info = {
-				.position = {1, 3},
-				.line = {tests[10].string, 13},
-				.hint = {tests[10].string + 2, 1}
-			},
-			.next = diagnostics10 + 1
-		},
-		{
-			.type = CYMB_DUPLICATE_SEPARATORS,
-			.info = {
-				.position = {1, 6},
-				.line = {tests[10].string, 13},
-				.hint = {tests[10].string + 5, 2}
-			},
-			.next = diagnostics10 + 2
-		},
-		{
-			.type = CYMB_DUPLICATE_SEPARATORS,
-			.info = {
-				.position = {1, 9},
-				.line = {tests[10].string, 13},
-				.hint = {tests[10].string + 8, 3}
-			},
-			.next = diagnostics10 + 3
-		},
-		{
-			.type = CYMB_TRAILING_SEPARATOR,
-			.info = {
-				.position = {1, 13},
-				.line = {tests[10].string, 13},
-				.hint = {tests[10].string + 12, 1}
-			}
-		}
-	};
-	tests[10].diagnostics.start = diagnostics10;
-	
-	CymbDiagnostic diagnostics11[] = {
-		{
-			.type = CYMB_SEPARATOR_AFTER_BASE,
-			.info = {
-				.position = {1, 3},
-				.line = {tests[11].string, 13},
-				.hint = {tests[11].string + 2, 1}
-			},
-			.next = diagnostics11 + 1
-		},
-		{
-			.type = CYMB_DUPLICATE_SEPARATORS,
-			.info = {
-				.position = {1, 3},
-				.line = {tests[11].string, 13},
-				.hint = {tests[11].string + 2, 3}
-			},
-			.next = diagnostics11 + 2
-		},
-		{
-			.type = CYMB_DUPLICATE_SEPARATORS,
-			.info = {
-				.position = {1, 9},
-				.line = {tests[11].string, 13},
-				.hint = {tests[11].string + 8, 3}
-			},
-			.next = diagnostics11 + 3
-		},
-		{
-			.type = CYMB_TRAILING_SEPARATOR,
-			.info = {
-				.position = {1, 11},
-				.line = {tests[11].string, 13},
-				.hint = {tests[11].string + 10, 1}
-			}
-		}
-	};
-	tests[11].diagnostics.start = diagnostics11;
-
-	CymbDiagnostic diagnostics12[] = {
-		{
-			.type = CYMB_INVALID_CONSTANT_SUFFIX,
-			.info = {
-				.position = {1, 2},
-				.line = {tests[12].string, 4},
-				.hint = {tests[12].string + 1, 1}
-			}
-		}
-	};
-	tests[12].diagnostics.start = diagnostics12;
-
 	const char* const format14 = "%"PRIuMAX"%"PRIuMAX;
 	const int length14 = snprintf(nullptr, 0, format14, UINTMAX_MAX, UINTMAX_MAX);
 	if(length14 <= 0 || length14 >= INT_MAX)
@@ -714,7 +690,7 @@ static void cymbTestConstants(CymbTestContext* const context)
 		context->passed = false;
 		goto end;
 	}
-	char* const string14 = malloc(length14 + 1);
+	char* const string14 = cymbArenaAllocate(&context->arena, length14 + 1, alignof(typeof(string14[0])));
 	if(!string14)
 	{
 		context->passed = false;
@@ -723,7 +699,7 @@ static void cymbTestConstants(CymbTestContext* const context)
 	if(snprintf(string14, length14 + 1, format14, UINTMAX_MAX, UINTMAX_MAX) != length14)
 	{
 		context->passed = false;
-		goto clear;
+		goto end;
 	}
 	tests[14].string = string14;
 	tests[14].solution.info = (CymbDiagnosticInfo){
@@ -736,7 +712,7 @@ static void cymbTestConstants(CymbTestContext* const context)
 		.position = {1, length14 + 1},
 		.line = {string14, length14}
 	};
-	CymbDiagnostic diagnostics14[] = {
+	const CymbDiagnostic diagnostics14[] = {
 		{
 			.type = CYMB_CONSTANT_TOO_LARGE,
 			.info = {
@@ -746,7 +722,8 @@ static void cymbTestConstants(CymbTestContext* const context)
 			}
 		}
 	};
-	tests[14].diagnostics.start = diagnostics14;
+	tests[14].diagnostics = diagnostics14;
+	tests[14].diagnosticCount = 1;
 
 	for(size_t testIndex = 0; testIndex < testCount; ++testIndex)
 	{
@@ -754,9 +731,6 @@ static void cymbTestConstants(CymbTestContext* const context)
 
 		cymbDoLexTest(&tests[testIndex], cymbParseConstant, context);
 	}
-
-	clear:
-	free(string14);
 
 	end:
 	cymbContextPop(context);
@@ -905,7 +879,8 @@ static void cymbTestLex(CymbTestContext* const context)
 		const char* string;
 		CymbTokenList tokens;
 		bool valid;
-		CymbDiagnosticList diagnostics;
+		const CymbDiagnostic* diagnostics;
+		size_t diagnosticCount;
 	} tests[] = {
 		{.string = "", .tokens = {
 			.tokens = nullptr,
@@ -1072,21 +1047,18 @@ static void cymbTestLex(CymbTestContext* const context)
 				}
 			},
 			.count = 5
-		}, .valid = false, .diagnostics = {}}
+		}, .valid = false, .diagnostics = (const CymbDiagnostic[]){
+			{
+				.type = CYMB_INVALID_CONSTANT_SUFFIX,
+				.info = {
+					.position = {1, 10},
+					.line = {tests[3].string, 13},
+					.hint = {tests[3].string + 9, 3}
+				}
+			}
+		}, .diagnosticCount = 1}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
-
-	CymbDiagnostic diagnostics3[] = {
-		{
-			.type = CYMB_INVALID_CONSTANT_SUFFIX,
-			.info = {
-				.position = {1, 10},
-				.line = {tests[3].string, 13},
-				.hint = {tests[3].string + 9, 3}
-			}
-		}
-	};
-	tests[3].diagnostics.start = diagnostics3;
 
 	const CymbArenaSave save = cymbArenaSave(&context->arena);
 
@@ -1103,12 +1075,11 @@ static void cymbTestLex(CymbTestContext* const context)
 			goto next;
 		}
 
-		cymbCompareDiagnostics(&context->diagnostics, &tests[testIndex].diagnostics, context);
+		cymbCompareDiagnostics(&context->diagnostics, tests[testIndex].diagnostics, tests[testIndex].diagnosticCount, context);
 
 		if(tokens.count != tests[testIndex].tokens.count)
 		{
 			cymbFail(context, "Wrong token count.");
-			free(tokens.tokens);
 			goto next;
 		}
 
@@ -1123,11 +1094,8 @@ static void cymbTestLex(CymbTestContext* const context)
 		
 		cymbContextPop(context);
 
-		cymbFreeTokenList(&tokens);
-
 		next:
 		cymbArenaRestore(&context->arena, save);
-		cymbDiagnosticListFree(&context->diagnostics);
 	}
 
 	cymbContextPop(context);

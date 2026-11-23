@@ -29,7 +29,7 @@ typedef int64_t Elf64_Sxword;
 #define EI_PAD 9
 #define EI_NIDENT 16
 
-#define ELFMAG0 0x7F
+#define ELFMAG0 0x7f
 #define ELFMAG1 'E'
 #define ELFMAG2 'L'
 #define ELFMAG3 'F'
@@ -433,11 +433,11 @@ typedef struct
 
 #define ELF32_ST_BIND(info) ((info) >> 4)
 #define ELF32_ST_TYPE(info) ((info) & 0xf)
-#define ELF32_ST_INFO(bind, type) (((binding) << 4) + ((type) & 0xF))
+#define ELF32_ST_INFO(bind, type) (((binding) << 4) + ((type) & 0xf))
 
 #define ELF64_ST_BIND(info) ((info) >> 4)
 #define ELF64_ST_TYPE(info) ((info) & 0xf)
-#define ELF64_ST_INFO(bind, type) (((binding) << 4) + ((type) & 0xF))
+#define ELF64_ST_INFO(bind, type) (((binding) << 4) + ((type) & 0xf))
 
 #define ELF32_ST_VISIBILITY(other) ((other) & 0x3)
 #define ELF64_ST_VISIBILITY(other) ((other) & 0x3)
@@ -599,7 +599,7 @@ typedef struct
 #define DT_PREINIT_ARRAY 32
 #define DT_PREINIT_ARRAYSZ 33
 #define DT_SYMTAB_SHNDX 34
-#define DT_LOOS 0x6000000D
+#define DT_LOOS 0x6000000d
 #define DT_HIOS 0x6ffff000
 #define DT_LOPROC 0x70000000
 #define DT_HIPROC 0x7fffffff

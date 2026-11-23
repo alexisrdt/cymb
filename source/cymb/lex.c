@@ -770,7 +770,8 @@ CymbResult cymbParseConstant(CymbReader* const reader, CymbToken* const token, C
 		return CYMB_NO_MATCH;
 	}
 
-	const CymbDiagnostic* diagnostic = diagnostics->end;
+	const CymbSegment* segment = diagnostics->diagnostics.end;
+	size_t size = segment ? segment->size : 0;
 
 	const unsigned char base = cymbParseBase(reader);
 	uintmax_t value;
@@ -801,20 +802,25 @@ CymbResult cymbParseConstant(CymbReader* const reader, CymbToken* const token, C
 
 	if(!tooLarge)
 	{
-		if(!diagnostic)
+		if(!segment)
 		{
-			diagnostic = diagnostics->start;
+			segment = diagnostics->diagnostics.start;
+			size = 0;
 		}
 
-		while(diagnostic)
+		while(segment)
 		{
-			if(diagnostic->type == CYMB_CONSTANT_TOO_LARGE)
+			for(; size < segment->size; size += diagnostics->diagnostics.elementSize)
 			{
-				tooLarge = true;
-				break;
+				const CymbDiagnostic* const diagnostic = (const CymbDiagnostic*)((const char*)segment->segment + size);
+				if(diagnostic->type == CYMB_CONSTANT_TOO_LARGE)
+				{
+					tooLarge = true;
+					break;
+				}
 			}
 
-			diagnostic = diagnostic->next;
+			segment = segment->next;
 		}
 	}
 	
@@ -868,15 +874,10 @@ CymbResult cymbLex(const char* const string, CymbTokenList* const tokens, CymbDi
 {
 	CymbResult result = CYMB_SUCCESS;
 
-	tokens->count = 0;
+	*tokens = (CymbTokenList){};
 
-	size_t tokensCapacity = 1024;
-	tokens->tokens = malloc(tokensCapacity * sizeof(tokens->tokens[0]));
-	if(!tokens->tokens)
-	{
-		result = CYMB_OUT_OF_MEMORY;
-		return result;
-	}
+	CymbSegmentedArray tokensArray;
+	cymbSegmentedArrayCreate(&tokensArray, diagnostics->diagnostics.arena, sizeof(tokens->tokens[0]), alignof(typeof(tokens->tokens[0])));
 
 	CymbReader reader;
 	cymbReaderCreate(string, diagnostics->tabWidth, &reader);
@@ -888,29 +889,15 @@ CymbResult cymbLex(const char* const string, CymbTokenList* const tokens, CymbDi
 		cymbParseConstant,
 		cymbParseIdentifier
 	};
-	static constexpr size_t lexFunctionCount = CYMB_LENGTH(lexFunctions);
+	constexpr size_t lexFunctionCount = CYMB_LENGTH(lexFunctions);
 
 	while(cymbReaderSkipSpaces(&reader), *reader.string != '\0')
 	{
-		if(tokens->count == tokensCapacity)
+		CymbToken* const token = cymbSegmentArrayNext(&tokensArray);
+		if(!token)
 		{
-			if(tokensCapacity * sizeof(tokens->tokens) == cymbSizeMax)
-			{
-				result = CYMB_OUT_OF_MEMORY;
-				goto clear;
-			}
-
-			tokensCapacity = tokensCapacity > cymbSizeMax / 2 / sizeof(tokens->tokens[0]) ? cymbSizeMax / sizeof(tokens->tokens[0]) : tokensCapacity * 2;
-			CymbToken* const newTokens = realloc(tokens->tokens, tokensCapacity * sizeof(tokens->tokens[0]));
-			if(!newTokens)
-			{
-				result = CYMB_OUT_OF_MEMORY;
-				goto clear;
-			}
-			tokens->tokens = newTokens;
+			return CYMB_OUT_OF_MEMORY;
 		}
-
-		CymbToken* const token = &tokens->tokens[tokens->count];
 		*token = (CymbToken){
 			.info = {
 				.position = reader.position,
@@ -934,7 +921,7 @@ CymbResult cymbLex(const char* const string, CymbTokenList* const tokens, CymbDi
 			}
 			if(lexResult != CYMB_NO_MATCH)
 			{
-				goto clear;
+				goto end;
 			}
 		}
 
@@ -952,7 +939,7 @@ CymbResult cymbLex(const char* const string, CymbTokenList* const tokens, CymbDi
 		if(diagnosticResult != CYMB_SUCCESS)
 		{
 			result = diagnosticResult;
-			goto clear;
+			goto end;
 		}
 
 		cymbReaderPop(&reader);
@@ -964,30 +951,17 @@ CymbResult cymbLex(const char* const string, CymbTokenList* const tokens, CymbDi
 
 	if(tokens->count == 0)
 	{
-		goto clear;
+		goto end;
 	}
 
-	if(tokens->count < tokensCapacity)
+	tokens->tokens = cymbArenaAllocate(diagnostics->diagnostics.arena, tokens->count * sizeof(tokens->tokens[0]), alignof(typeof(tokens->tokens[0])));
+	if(!tokens->tokens)
 	{
-		CymbToken* const newTokens = realloc(tokens->tokens, tokens->count * sizeof(tokens->tokens[0]));
-		if(!newTokens)
-		{
-			result = CYMB_OUT_OF_MEMORY;
-			goto clear;
-		}
-		tokens->tokens = newTokens;
+		return CYMB_OUT_OF_MEMORY;
 	}
-	goto end;
 
-	clear:
-	cymbFreeTokenList(tokens);
+	cymbSegmentedArrayCopy(&tokensArray, tokens->tokens);
 
 	end:
 	return result;
-}
-
-void cymbFreeTokenList(CymbTokenList* const tokens)
-{
-	CYMB_FREE(tokens->tokens);
-	*tokens = (CymbTokenList){};
 }

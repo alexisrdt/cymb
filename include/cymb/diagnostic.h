@@ -1,6 +1,8 @@
 #ifndef CYMB_DIAGNOSTIC_H
 #define CYMB_DIAGNOSTIC_H
 
+#include <stdint.h>
+
 #include "cymb/memory.h"
 #include "cymb/result.h"
 
@@ -70,7 +72,7 @@ typedef enum CymbDiagnosticType
 typedef struct CymbPosition
 {
 	size_t line;
-	size_t column;
+	uintmax_t column;
 } CymbPosition;
 
 /*
@@ -100,8 +102,6 @@ typedef struct CymbDiagnostic
 {
 	CymbDiagnosticType type;
 	CymbDiagnosticInfo info;
-
-	struct CymbDiagnostic* next;
 } CymbDiagnostic;
 
 /*
@@ -110,18 +110,14 @@ typedef struct CymbDiagnostic
  * Fields:
  * - file: The file for which diagnostics are emitted.
  * - tabWidth: The tab width used for diagnostics.
- * - arena: The arena used for allocations.
- * - start: The first diagnostic.
- * - end: The last diagnostic.
+ * - diagnostics: The segmented array storing diagnostics.
  */
 typedef struct CymbDiagnosticList
 {
 	const char* file;
-	unsigned char tabWidth;
+	uintmax_t tabWidth;
 
-	CymbArena* arena;
-	CymbDiagnostic* start;
-	CymbDiagnostic* end;
+	CymbSegmentedArray diagnostics;
 } CymbDiagnosticList;
 
 /*
@@ -141,15 +137,7 @@ void cymbDiagnosticListPrint(const CymbDiagnosticList* diagnostics);
  * - file: The file for which diagnostics are emitted.
  * - tabWidth: The tab width used for diagnostics.
  */
-void cymbDiagnosticListCreate(CymbDiagnosticList* diagnostics, CymbArena* arena, const char* file, unsigned char tabWidth);
-
-/*
- * Free a list of diagnostics.
- *
- * Parameters:
- * - diagnostics: The list to free.
- */
-void cymbDiagnosticListFree(CymbDiagnosticList* diagnostics);
+void cymbDiagnosticListCreate(CymbDiagnosticList* diagnostics, CymbArena* arena, const char* file, uintmax_t tabWidth);
 
 /*
  * Add a diagnostic to a list.
@@ -174,6 +162,6 @@ CymbResult cymbDiagnosticAdd(CymbDiagnosticList* diagnostics, const CymbDiagnost
  * Returns:
  * - The next tab stop column, not checked for overflow.
  */
-size_t cymbNextTab(size_t column, unsigned char tabWidth);
+uintmax_t cymbNextTab(uintmax_t column, uintmax_t tabWidth);
 
 #endif

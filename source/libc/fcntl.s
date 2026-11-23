@@ -1,8 +1,8 @@
 .global openat
 .type openat, @function
 openat:
-	MOV X8, #56
+	mov x8, 56
 
-	SVC #0
+	svc 0
 
-	RET
+	ret

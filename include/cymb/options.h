@@ -1,6 +1,8 @@
 #ifndef CYMB_ARGUMENTS_H
 #define CYMB_ARGUMENTS_H
 
+#include <stdint.h>
+
 #include "cymb/diagnostic.h"
 #include "cymb/result.h"
 
@@ -16,6 +18,18 @@ typedef enum CymbStandard: long
 	CYMB_C17 = 201710L,
 	CYMB_C23 = 202311L
 } CymbStandard;
+
+typedef enum CymbFormat
+{
+	CYMB_ELF,
+	CYMB_COFF
+} CymbFormat;
+
+typedef enum CymbMachine
+{
+	CYMB_X86_64,
+	CYMB_AARCH64
+} CymbMachine;
 
 /*
  * The compiling options.
@@ -38,7 +52,10 @@ typedef struct CymbOptions
 
 	CymbStandard standard;
 
-	unsigned char tabWidth;
+	CymbFormat format;
+	CymbMachine machine;
+
+	uintmax_t tabWidth;
 
 	bool debug: 1;
 	bool version: 1;

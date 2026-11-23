@@ -33,7 +33,7 @@ void cymbContextSetIndex(CymbTestContext* context, size_t index);
 void cymbFail(CymbTestContext* context, const char* string);
 
 void cymbCompareDiagnosticInfo(const CymbDiagnosticInfo* first, const CymbDiagnosticInfo* second, CymbTestContext* context);
-void cymbCompareDiagnostics(const CymbDiagnosticList* first, const CymbDiagnosticList* second, CymbTestContext* context);
+void cymbCompareDiagnostics(const CymbDiagnosticList* first, const CymbDiagnostic* second, size_t secondCount, CymbTestContext* context);
 
 void cymbTestLexs(CymbTestContext* context);
 void cymbTestTrees(CymbTestContext* context);

@@ -1949,25 +1949,8 @@ CymbResult cymbParse(const CymbTokenList* const tokens, CymbArena* const arena, 
 	tree->root = nullptr;
 	tree->arena = arena;
 
-	CymbResult result = cymbParseProgram(tree, &(CymbTokenList){
+	return cymbParseProgram(tree, &(CymbTokenList){
 		.tokens = tokens->tokens,
 		.count = tokens->count
 	}, diagnostics);
-	if(result != CYMB_SUCCESS)
-	{
-		goto error;
-	}
-
-	goto end;
-
-	error:
-	cymbFreeTree(tree);
-
-	end:
-	return result;
-}
-
-void cymbFreeTree(CymbTree* const tree)
-{
-	*tree = (CymbTree){};
 }

@@ -1,6 +1,7 @@
 #ifndef CYMB_CYMB_H
 #define CYMB_CYMB_H
 
+#include "cymb/arena.h"
 #include "cymb/assembly.h"
 #include "cymb/diagnostic.h"
 #include "cymb/elf.h"
@@ -24,6 +25,6 @@
  * - CYMB_INVALID if an argument is invalid or a file could not be compiled.
  * - CYMB_OUT_OF_MEMORY if out of memory.
  */
-CymbResult cymbMain(const CymbConstString* arguments, size_t argumentCount);
+CymbResult cymbMain(CymbArena* arena, const CymbConstString* arguments, size_t argumentCount);
 
 #endif

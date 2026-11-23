@@ -9,7 +9,8 @@ typedef struct CymbTreeTest
 	CymbTokenList tokens;
 	CymbResult result;
 	CymbTree solution;
-	CymbDiagnosticList diagnostics;
+	const CymbDiagnostic* diagnostics;
+	size_t diagnosticCount;
 	size_t endTokensOffset;
 } CymbTreeTest;
 
@@ -345,6 +346,8 @@ static void cymbDoTreeTest(const CymbTreeTest* const test, const CymbTreeFunctio
 
 	CymbTokenList tokens = test->tokens;
 
+	cymbSegmentedArrayCreate(&context->diagnostics.diagnostics, &context->arena, sizeof(CymbDiagnostic), alignof(CymbDiagnostic));
+
 	const CymbResult result = function(&tree, &tokens, &context->diagnostics);
 	if(result != test->result)
 	{
@@ -352,7 +355,7 @@ static void cymbDoTreeTest(const CymbTreeTest* const test, const CymbTreeFunctio
 		goto end;
 	}
 
-	cymbCompareDiagnostics(&context->diagnostics, &test->diagnostics, context);
+	cymbCompareDiagnostics(&context->diagnostics, test->diagnostics, test->diagnosticCount, context);
 
 	if(test->endTokensOffset > 0 && (tokens.tokens != test->tokens.tokens + test->endTokensOffset || tokens.count != test->tokens.count - test->endTokensOffset))
 	{
@@ -363,7 +366,6 @@ static void cymbDoTreeTest(const CymbTreeTest* const test, const CymbTreeFunctio
 
 	end:
 	cymbArenaRestore(&context->arena, save);
-	cymbDiagnosticListFree(&context->diagnostics);
 }
 
 static void cymbTestParentheses(CymbTestContext* const context)
@@ -377,14 +379,15 @@ static void cymbTestParentheses(CymbTestContext* const context)
 		CymbResult result;
 		size_t startIndex;
 		size_t endIndex;
-		CymbDiagnosticList diagnostics;
+		const CymbDiagnostic* diagnostics;
+		size_t diagnosticCount;
 	} tests[] = {
 		{{
 			.tokens = (CymbToken[]){
 				{.type = CYMB_TOKEN_PLUS}
 			},
 			.count = 1
-		}, CYMB_DIRECTION_FORWARD, CYMB_NO_MATCH, 0, 0, {}},
+		}, CYMB_DIRECTION_FORWARD, CYMB_NO_MATCH, 0, 0, nullptr, 0},
 		{{
 			.tokens = (CymbToken[]){
 				{
@@ -397,7 +400,12 @@ static void cymbTestParentheses(CymbTestContext* const context)
 				}
 			},
 			.count = 1
-		}, CYMB_DIRECTION_FORWARD, CYMB_INVALID, 0, 0, {}},
+		}, CYMB_DIRECTION_FORWARD, CYMB_INVALID, 0, 0, (const CymbDiagnostic[]){
+			{
+				.type = CYMB_UNMATCHED_PARENTHESIS,
+				.info = tests[1].tokens.tokens[0].info
+			}
+		}, 1},
 		{{
 			.tokens = (CymbToken[]){
 				{
@@ -410,21 +418,26 @@ static void cymbTestParentheses(CymbTestContext* const context)
 				}
 			},
 			.count = 1
-		}, CYMB_DIRECTION_BACKWARD, CYMB_INVALID, 0, 0, {}},
+		}, CYMB_DIRECTION_BACKWARD, CYMB_INVALID, 0, 0, (const CymbDiagnostic[]){
+			{
+				.type = CYMB_UNMATCHED_PARENTHESIS,
+				.info = tests[2].tokens.tokens[0].info
+			}
+		}, .diagnosticCount = 1},
 		{{
 			.tokens = (CymbToken[]){
 				{.type = CYMB_TOKEN_OPEN_PARENTHESIS},
 				{.type = CYMB_TOKEN_CLOSE_PARENTHESIS}
 			},
 			.count = 2
-		}, CYMB_DIRECTION_FORWARD, CYMB_SUCCESS, 0, 1, {}},
+		}, CYMB_DIRECTION_FORWARD, CYMB_SUCCESS, 0, 1, nullptr, 0},
 		{{
 			.tokens = (CymbToken[]){
 				{.type = CYMB_TOKEN_OPEN_PARENTHESIS},
 				{.type = CYMB_TOKEN_CLOSE_PARENTHESIS}
 			},
 			.count = 2
-		}, CYMB_DIRECTION_BACKWARD, CYMB_SUCCESS, 1, 0, {}},
+		}, CYMB_DIRECTION_BACKWARD, CYMB_SUCCESS, 1, 0, nullptr, 0},
 		{{
 			.tokens = (CymbToken[]){
 				{
@@ -439,7 +452,12 @@ static void cymbTestParentheses(CymbTestContext* const context)
 				{.type = CYMB_TOKEN_CLOSE_PARENTHESIS}
 			},
 			.count = 3
-		}, CYMB_DIRECTION_FORWARD, CYMB_INVALID, 0, 0, {}},
+		}, CYMB_DIRECTION_FORWARD, CYMB_INVALID, 0, 0, (const CymbDiagnostic[]){
+			{
+				.type = CYMB_UNMATCHED_PARENTHESIS,
+				.info = tests[5].tokens.tokens[0].info
+			}
+		}, .diagnosticCount = 1},
 		{{
 			.tokens = (CymbToken[]){
 				{.type = CYMB_TOKEN_OPEN_PARENTHESIS},
@@ -454,7 +472,12 @@ static void cymbTestParentheses(CymbTestContext* const context)
 				}
 			},
 			.count = 3
-		}, CYMB_DIRECTION_BACKWARD, CYMB_INVALID, 2, 2, {}},
+		}, CYMB_DIRECTION_BACKWARD, CYMB_INVALID, 2, 2, (const CymbDiagnostic[]){
+			{
+				.type = CYMB_UNMATCHED_PARENTHESIS,
+				.info = tests[6].tokens.tokens[2].info
+			}
+		}, .diagnosticCount = 1},
 		{{
 			.tokens = (CymbToken[]){
 				{.type = CYMB_TOKEN_OPEN_PARENTHESIS},
@@ -467,7 +490,7 @@ static void cymbTestParentheses(CymbTestContext* const context)
 				{.type = CYMB_TOKEN_PLUS}
 			},
 			.count = 8
-		}, CYMB_DIRECTION_FORWARD, CYMB_SUCCESS, 0, 6, {}},
+		}, CYMB_DIRECTION_FORWARD, CYMB_SUCCESS, 0, 6, nullptr, 0},
 		{{
 			.tokens = (CymbToken[]){
 				{.type = CYMB_TOKEN_PLUS},
@@ -480,48 +503,17 @@ static void cymbTestParentheses(CymbTestContext* const context)
 				{.type = CYMB_TOKEN_CLOSE_PARENTHESIS}
 			},
 			.count = 8
-		}, CYMB_DIRECTION_BACKWARD, CYMB_SUCCESS, 7, 1, {}}
+		}, CYMB_DIRECTION_BACKWARD, CYMB_SUCCESS, 7, 1, nullptr, 0}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
-
-	CymbDiagnostic diagnostics1[] = {
-		{
-			.type = CYMB_UNMATCHED_PARENTHESIS,
-			.info = tests[1].tokens.tokens[0].info
-		}
-	};
-	tests[1].diagnostics.start = diagnostics1;
-
-	CymbDiagnostic diagnostics2[] = {
-		{
-			.type = CYMB_UNMATCHED_PARENTHESIS,
-			.info = tests[2].tokens.tokens[0].info
-		}
-	};
-	tests[2].diagnostics.start = diagnostics2;
-
-	CymbDiagnostic diagnostics5[] = {
-		{
-			.type = CYMB_UNMATCHED_PARENTHESIS,
-			.info = tests[5].tokens.tokens[0].info
-		}
-	};
-	tests[5].diagnostics.start = diagnostics5;
-
-	CymbDiagnostic diagnostics6[] = {
-		{
-			.type = CYMB_UNMATCHED_PARENTHESIS,
-			.info = tests[6].tokens.tokens[2].info
-		}
-	};
-	tests[6].diagnostics.start = diagnostics6;
 
 	for(size_t testIndex = 0; testIndex < testCount; ++testIndex)
 	{
 		cymbArenaClear(&context->arena);
-		cymbDiagnosticListFree(&context->diagnostics);
 
 		cymbContextSetIndex(context, testIndex);
+
+		cymbSegmentedArrayCreate(&context->diagnostics.diagnostics, &context->arena, sizeof(CymbDiagnostic), alignof(CymbDiagnostic));
 
 		size_t tokenIndex = tests[testIndex].startIndex;
 		const CymbResult result = cymbSkipParentheses(&tests[testIndex].tokens, tests[testIndex].direction, &tokenIndex, &context->diagnostics);
@@ -540,7 +532,7 @@ static void cymbTestParentheses(CymbTestContext* const context)
 
 		if(result == CYMB_INVALID)
 		{
-			cymbCompareDiagnostics(&context->diagnostics, &tests[testIndex].diagnostics, context);
+			cymbCompareDiagnostics(&context->diagnostics, tests[testIndex].diagnostics, tests[testIndex].diagnosticCount, context);
 		}
 	}
 
@@ -576,7 +568,12 @@ static void cymbTestExpressions(CymbTestContext* const context)
 				{.type = CYMB_TOKEN_PLUS}
 			},
 			.count = 2
-		}, CYMB_INVALID, {}, {}, 0},
+		}, CYMB_INVALID, {}, (const CymbDiagnostic[]){
+			{
+				.type = CYMB_EXPECTED_EXPRESSION,
+				.info = tests[0].tokens.tokens[1].info
+			}
+		}, 1, 0},
 		{{
 			.tokens = (CymbToken[]){
 				{
@@ -589,7 +586,7 @@ static void cymbTestExpressions(CymbTestContext* const context)
 				}
 			},
 			.count = 1
-		}, CYMB_SUCCESS, {}, {}, 1},
+		}, CYMB_SUCCESS, {}, nullptr, 0, 1},
 		{{
 			.tokens = (CymbToken[]){
 				{
@@ -736,7 +733,7 @@ static void cymbTestExpressions(CymbTestContext* const context)
 				}
 			},
 			.count = 17
-		}, CYMB_SUCCESS, {}, {}, 17},
+		}, CYMB_SUCCESS, {}, nullptr, 0, 17},
 		{{
 			.tokens = (CymbToken[]){
 				{
@@ -1056,7 +1053,7 @@ static void cymbTestExpressions(CymbTestContext* const context)
 				}
 			},
 			.count = 37
-		}, CYMB_SUCCESS, {}, {}, 37},
+		}, CYMB_SUCCESS, {}, nullptr, 0, 37},
 		{{
 			.tokens = (CymbToken[]){
 				{
@@ -1198,7 +1195,7 @@ static void cymbTestExpressions(CymbTestContext* const context)
 				}
 			},
 			.count = 17
-		}, CYMB_SUCCESS, {}, {}, 17},
+		}, CYMB_SUCCESS, {}, nullptr, 0, 17},
 		{{
 			.tokens = (CymbToken[]){
 				{
@@ -1295,7 +1292,7 @@ static void cymbTestExpressions(CymbTestContext* const context)
 				}
 			},
 			.count = 11
-		}, CYMB_SUCCESS, {}, {}, 11},
+		}, CYMB_SUCCESS, {}, nullptr, 0, 11},
 		{{
 			.tokens = (CymbToken[]){
 				{
@@ -1348,7 +1345,12 @@ static void cymbTestExpressions(CymbTestContext* const context)
 				}
 			},
 			.count = 6
-		}, CYMB_INVALID, {}, {}, 6},
+		}, CYMB_INVALID, {}, (const CymbDiagnostic[]){
+			{
+				.type = CYMB_UNMATCHED_PARENTHESIS,
+				.info = tests[6].tokens.tokens[2].info
+			}
+		}, 1, 6},
 		{{
 			.tokens = (CymbToken[]){
 				{
@@ -1549,7 +1551,7 @@ static void cymbTestExpressions(CymbTestContext* const context)
 				},
 			},
 			.count = 24
-		}, CYMB_SUCCESS, {}, {}, 24},
+		}, CYMB_SUCCESS, {}, nullptr, 0, 24},
 		{{
 			.tokens = (CymbToken[]){
 				{
@@ -1678,7 +1680,7 @@ static void cymbTestExpressions(CymbTestContext* const context)
 				}
 			},
 			.count = 15
-		}, CYMB_SUCCESS, {}, {}, 15}
+		}, CYMB_SUCCESS, {}, nullptr, 0, 15}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
 
@@ -1690,13 +1692,6 @@ static void cymbTestExpressions(CymbTestContext* const context)
 		}
 	};
 	tests[0].solution.root = nodes0 + 0;
-	CymbDiagnostic diagnostics0[] = {
-		{
-			.type = CYMB_EXPECTED_EXPRESSION,
-			.info = tests[0].tokens.tokens[1].info
-		}
-	};
-	tests[0].diagnostics.start = diagnostics0;
 
 	CymbNode nodes1[] = {
 		{
@@ -2246,13 +2241,6 @@ static void cymbTestExpressions(CymbTestContext* const context)
 		}
 	};
 	tests[6].solution.root = nodes6 + 3;
-	CymbDiagnostic diagnostics6[] = {
-		{
-			.type = CYMB_UNMATCHED_PARENTHESIS,
-			.info = tests[6].tokens.tokens[2].info
-		}
-	};
-	tests[6].diagnostics.start = diagnostics6;
 
 	CymbNode nodes7[] = {
 		{
@@ -2468,7 +2456,7 @@ static void cymbTestTypes(CymbTestContext* const context)
 				}
 			},
 			.count = 1
-		}, CYMB_SUCCESS, {}, {}, 0},
+		}, CYMB_SUCCESS, {}, nullptr, 0, 0},
 		{{
 			.tokens = (CymbToken[]){
 				{
@@ -2497,7 +2485,7 @@ static void cymbTestTypes(CymbTestContext* const context)
 				}
 			},
 			.count = 3
-		}, CYMB_SUCCESS, {}, {}, 0},
+		}, CYMB_SUCCESS, {}, nullptr, 0, 0},
 		{{
 			.tokens = (CymbToken[]){
 				{
@@ -2550,7 +2538,7 @@ static void cymbTestTypes(CymbTestContext* const context)
 				}
 			},
 			.count = 6
-		}, CYMB_SUCCESS, {}, {}, 0},
+		}, CYMB_SUCCESS, {}, nullptr, 0, 0},
 		{{
 			.tokens = (CymbToken[]){
 				{
@@ -2595,7 +2583,12 @@ static void cymbTestTypes(CymbTestContext* const context)
 				},
 			},
 			.count = 5
-		}, CYMB_INVALID, {}, {}, 0}
+		}, CYMB_INVALID, {}, (const CymbDiagnostic[]){
+			{
+				.type = CYMB_MULTIPLE_CONST,
+				.info = tests[3].tokens.tokens[1].info
+			}
+		}, 1, 0}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
 
@@ -2641,14 +2634,6 @@ static void cymbTestTypes(CymbTestContext* const context)
 	};
 	tests[2].solution.root = nodes2 + 2;
 
-	CymbDiagnostic diagnostics3[] = {
-		{
-			.type = CYMB_MULTIPLE_CONST,
-			.info = tests[3].tokens.tokens[1].info
-		}
-	};
-	tests[3].diagnostics.start = diagnostics3;
-
 	for(size_t testIndex = 0; testIndex < testCount; ++testIndex)
 	{
 		cymbContextSetIndex(context, testIndex);
@@ -2684,13 +2669,18 @@ static void cymbTestStatements(CymbTestContext* const context)
 				}
 			},
 			.count = 1
-		}, CYMB_INVALID, {}, {}, 0},
+		}, CYMB_INVALID, {}, (const CymbDiagnostic[]){
+			{
+				.type = CYMB_EXPECTED_SEMICOLON,
+				.info = tests[0].tokens.tokens[0].info
+			}
+		}, 1, 0},
 		{{
 			.tokens = (CymbToken[]){
 				{.type = CYMB_TOKEN_SEMICOLON}
 			},
 			.count = 1
-		}, CYMB_SUCCESS, {}, {}, 0},
+		}, CYMB_SUCCESS, {}, nullptr, 0, 0},
 		{{
 			.tokens = (CymbToken[]){
 				{
@@ -2711,7 +2701,7 @@ static void cymbTestStatements(CymbTestContext* const context)
 				}
 			},
 			.count = 2
-		}, CYMB_SUCCESS, {}, {}, 2},
+		}, CYMB_SUCCESS, {}, nullptr, 0, 2},
 		{{
 			.tokens = (CymbToken[]){
 				{
@@ -2767,7 +2757,7 @@ static void cymbTestStatements(CymbTestContext* const context)
 				}
 			},
 			.count = 6
-		}, CYMB_SUCCESS, {}, {}, 5},
+		}, CYMB_SUCCESS, {}, nullptr, 0, 5},
 		{{
 			.tokens = (CymbToken[]){
 				{
@@ -2796,7 +2786,7 @@ static void cymbTestStatements(CymbTestContext* const context)
 				}
 			},
 			.count = 3,
-		}, CYMB_SUCCESS, {}, {}, 3},
+		}, CYMB_SUCCESS, {}, nullptr, 0, 3},
 		{{
 			.tokens = (CymbToken[]){
 				{
@@ -2850,7 +2840,7 @@ static void cymbTestStatements(CymbTestContext* const context)
 				}
 			},
 			.count = 6
-		}, CYMB_SUCCESS, {}, {}, 6},
+		}, CYMB_SUCCESS, {}, nullptr, 0, 6},
 		{{
 			.tokens = (CymbToken[]){
 				{
@@ -3010,7 +3000,7 @@ static void cymbTestStatements(CymbTestContext* const context)
 				}
 			},
 			.count = 19
-		}, CYMB_SUCCESS, {}, {}, 19},
+		}, CYMB_SUCCESS, {}, nullptr, 0, 19},
 		{{
 			.tokens = (CymbToken[]){
 				{
@@ -3080,17 +3070,9 @@ static void cymbTestStatements(CymbTestContext* const context)
 				},
 			},
 			.count = 8
-		}, CYMB_SUCCESS, {}, {}, 6}
+		}, CYMB_SUCCESS, {}, nullptr, 0, 6}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
-
-	CymbDiagnostic diagnostics0[] = {
-		{
-			.type = CYMB_EXPECTED_SEMICOLON,
-			.info = tests[0].tokens.tokens[0].info
-		}
-	};
-	tests[0].diagnostics.start = diagnostics0;
 
 	CymbNode nodes2[] = {
 		{
@@ -3460,7 +3442,7 @@ static void cymbTestFunctions(CymbTestContext* const context)
 				}
 			},
 			.count = 17
-		}, CYMB_SUCCESS, {}, {}, 17},
+		}, CYMB_SUCCESS, {}, nullptr, 0, 17},
 		{{
 			.tokens = (CymbToken[]){
 				{
@@ -3529,7 +3511,7 @@ static void cymbTestFunctions(CymbTestContext* const context)
 				}
 			},
 			.count = 8
-		}, CYMB_SUCCESS, {}, {}, 8},
+		}, CYMB_SUCCESS, {}, nullptr, 0, 8},
 		{{
 			.tokens = (CymbToken[]){
 				{
@@ -3680,7 +3662,7 @@ static void cymbTestFunctions(CymbTestContext* const context)
 				}
 			},
 			.count = 18
-		}, CYMB_SUCCESS, {}, {}, 17},
+		}, CYMB_SUCCESS, {}, nullptr, 0, 17},
 		{{
 			.tokens = (CymbToken[]){
 				{
@@ -3813,7 +3795,7 @@ static void cymbTestFunctions(CymbTestContext* const context)
 				}
 			},
 			.count = 16
-		}, CYMB_SUCCESS, {}, {}, 16}
+		}, CYMB_SUCCESS, {}, nullptr, 0, 16}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
 
@@ -4270,7 +4252,7 @@ static void cymbTestProgram(CymbTestContext* const context)
 				}
 			},
 			.count = 19
-		}, CYMB_SUCCESS, {}, {}, 19}
+		}, CYMB_SUCCESS, {}, nullptr, 0, 19}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
 

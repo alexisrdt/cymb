@@ -210,13 +210,13 @@ static void cymbDiagnosticPrint(const CymbDiagnostic* const diagnostic, const ch
 	{
 		int written = fprintf(stderr, "%zu | ", diagnostic->info.position.line);
 
-		size_t column = 1;
+		uintmax_t column = 1;
 		for(size_t characterIndex = 0; characterIndex < diagnostic->info.line.length; ++characterIndex)
 		{
 			if(diagnostic->info.line.string[characterIndex] == '\t')
 			{
-				const size_t nextTab = cymbNextTab(column, tabWidth);
-				size_t offset = nextTab - column;
+				const uintmax_t nextTab = cymbNextTab(column, tabWidth);
+				uintmax_t offset = nextTab - column;
 				while(offset--)
 				{
 					fputc(' ', stderr);
@@ -244,8 +244,8 @@ static void cymbDiagnosticPrint(const CymbDiagnostic* const diagnostic, const ch
 		{
 			if(diagnostic->info.line.string[offsetIndex] == '\t')
 			{
-				const size_t nextTab = cymbNextTab(column, tabWidth);
-				size_t offset = nextTab - column;
+				const uintmax_t nextTab = cymbNextTab(column, tabWidth);
+				uintmax_t offset = nextTab - column;
 				while(offset--)
 				{
 					fputc(' ', stderr);
@@ -275,55 +275,43 @@ static void cymbDiagnosticPrint(const CymbDiagnostic* const diagnostic, const ch
 
 void cymbDiagnosticListPrint(const CymbDiagnosticList* const diagnostics)
 {
-	const CymbDiagnostic* diagnostic = diagnostics->start;
-	while(diagnostic)
+	const CymbSegment* segment = diagnostics->diagnostics.end;
+	while(segment)
 	{
-		cymbDiagnosticPrint(diagnostic, diagnostics->file, diagnostics->tabWidth);
-		diagnostic = diagnostic->next;
+		for(size_t diagnosticIndex = 0; diagnosticIndex < segment->size; diagnosticIndex += diagnostics->diagnostics.elementSize)
+		{
+			const void* diagnostic = (const char*)segment->segment + diagnosticIndex;
+			cymbDiagnosticPrint(diagnostic, diagnostics->file, diagnostics->tabWidth);
+		}
+
+		segment = segment->next;
 	}
 }
 
-void cymbDiagnosticListCreate(CymbDiagnosticList* const diagnostics, CymbArena* const arena, const char* const file, const unsigned char tabWidth)
+void cymbDiagnosticListCreate(CymbDiagnosticList* const diagnostics, CymbArena* const arena, const char* const file, const uintmax_t tabWidth)
 {
 	*diagnostics = (CymbDiagnosticList){
 		.file = file,
-		.tabWidth = tabWidth,
-		.arena = arena
+		.tabWidth = tabWidth
 	};
-}
 
-void cymbDiagnosticListFree(CymbDiagnosticList* const diagnostics)
-{
-	diagnostics->start = nullptr;
-	diagnostics->end = nullptr;
+	cymbSegmentedArrayCreate(&diagnostics->diagnostics, arena, sizeof(CymbDiagnostic), alignof(CymbDiagnostic));
 }
 
 CymbResult cymbDiagnosticAdd(CymbDiagnosticList* const diagnostics, const CymbDiagnostic* const diagnostic)
 {
-	CymbDiagnostic* const result = cymbArenaAllocate(diagnostics->arena, sizeof(*diagnostic), alignof(typeof(*diagnostic)));
+	CymbDiagnostic* const result = cymbSegmentArrayNext(&diagnostics->diagnostics);
 	if(!result)
 	{
 		return CYMB_OUT_OF_MEMORY;
 	}
 
 	*result = *diagnostic;
-	result->next = nullptr;
-
-	if(!diagnostics->start)
-	{
-		diagnostics->start = result;
-		diagnostics->end = result;
-	}
-	else
-	{
-		diagnostics->end->next = result;
-		diagnostics->end = result;
-	}
 
 	return CYMB_SUCCESS;
 }
 
-size_t cymbNextTab(const size_t column, const unsigned char tabWidth)
+uintmax_t cymbNextTab(const uintmax_t column, const uintmax_t tabWidth)
 {
 	return column + tabWidth - (column - 1) % tabWidth;
 }

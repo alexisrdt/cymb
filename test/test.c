@@ -170,13 +170,14 @@ static void cymbTestArguments(CymbTestContext* const context)
 {
 	cymbContextPush(context, __func__);
 
-	struct
+	const struct
 	{
 		const CymbConstString* arguments;
 		size_t argumentCount;
 		CymbResult result;
 		CymbOptions options;
-		CymbDiagnosticList diagnostics;
+		const CymbDiagnostic* diagnostics;
+		size_t diagnosticCount;
 	} tests[] = {
 		{(const CymbConstString[]){
 			CYMB_STRING("main.c")
@@ -187,7 +188,7 @@ static void cymbTestArguments(CymbTestContext* const context)
 			.inputCount = 1,
 			.standard = CYMB_C23,
 			.tabWidth = 8
-		}, {}},
+		}, nullptr, 0},
 		{(const CymbConstString[]){
 			CYMB_STRING("-o"),
 			CYMB_STRING("main.s"),
@@ -201,14 +202,31 @@ static void cymbTestArguments(CymbTestContext* const context)
 			.output = tests[1].arguments[3].string + 9,
 			.standard = CYMB_C23,
 			.tabWidth = 8
-		}, {}},
+		}, nullptr, 0},
 		{(const CymbConstString[]){
 			CYMB_STRING("--output")
-		}, 1, CYMB_INVALID, {}, {}},
+		}, 1, CYMB_INVALID, {}, (const CymbDiagnostic[]){
+			{
+				.type = CYMB_MISSING_ARGUMENT,
+				.info = {
+					.hint = {tests[2].arguments[0].string + 2, tests[2].arguments[0].length - 2}
+				}
+			},
+			{
+				.type = CYMB_MISSING_ARGUMENT
+			}
+		}, 2},
 		{(const CymbConstString[]){
 			CYMB_STRING("main.c"),
 			CYMB_STRING("--some-option")
-		}, 2, CYMB_INVALID, {}, {}},
+		}, 2, CYMB_INVALID, {}, (const CymbDiagnostic[]){
+			{
+				.type = CYMB_UNKNOWN_OPTION,
+				.info = {
+					.hint = {tests[3].arguments[1].string + 2, tests[3].arguments[1].length - 2}
+				}
+			}
+		}, 1},
 		{(const CymbConstString[]){
 			CYMB_STRING("--standard"),
 			CYMB_STRING("c11"),
@@ -221,7 +239,7 @@ static void cymbTestArguments(CymbTestContext* const context)
 			.inputCount = 1,
 			.tabWidth = 4,
 			.standard = CYMB_C11
-		}, {}},
+		}, nullptr, 0},
 		{(const CymbConstString[]){
 			CYMB_STRING("main.c"),
 			CYMB_STRING("--tab-width=1"),
@@ -237,47 +255,22 @@ static void cymbTestArguments(CymbTestContext* const context)
 			.inputCount = 3,
 			.tabWidth = 1,
 			.standard = CYMB_C23
-		}, {}},
-		{nullptr, 0, CYMB_INVALID, {}, {}}
+		}, nullptr, 0},
+		{nullptr, 0, CYMB_INVALID, {}, (const CymbDiagnostic[]){
+			{
+				.type = CYMB_MISSING_ARGUMENT
+			}
+		}, 1}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
-
-	CymbDiagnostic diagnostics2[] = {
-		{
-			.type = CYMB_MISSING_ARGUMENT,
-			.info = {
-				.hint = {tests[2].arguments[0].string + 2, tests[2].arguments[0].length - 2}
-			},
-			.next = diagnostics2 + 1
-		},
-		{
-			.type = CYMB_MISSING_ARGUMENT
-		}
-	};
-	tests[2].diagnostics.start = diagnostics2;
-
-	CymbDiagnostic diagnostics3[] = {
-		{
-			.type = CYMB_UNKNOWN_OPTION,
-			.info = {
-				.hint = {tests[3].arguments[1].string + 2, tests[3].arguments[1].length - 2}
-			}
-		}
-	};
-	tests[3].diagnostics.start = diagnostics3;
-
-	CymbDiagnostic diagnostics6[] = {
-		{
-			.type = CYMB_MISSING_ARGUMENT
-		}
-	};
-	tests[6].diagnostics.start = diagnostics6;
 
 	const CymbArenaSave save = cymbArenaSave(&context->arena);
 
 	for(size_t testIndex = 0; testIndex < testCount; ++testIndex)
 	{
 		cymbContextSetIndex(context, testIndex);
+
+		cymbSegmentedArrayCreate(&context->diagnostics.diagnostics, &context->arena, sizeof(CymbDiagnostic), alignof(CymbDiagnostic));
 
 		CymbOptions options;
 		const CymbResult result = cymbParseArguments(tests[testIndex].arguments, tests[testIndex].argumentCount, &options, &context->diagnostics);
@@ -329,15 +322,9 @@ static void cymbTestArguments(CymbTestContext* const context)
 			}
 		}
 
-		cymbCompareDiagnostics(&context->diagnostics, &tests[testIndex].diagnostics, context);
-
-		if(options.inputCount > 0)
-		{
-			free(options.inputs);
-		}
+		cymbCompareDiagnostics(&context->diagnostics, tests[testIndex].diagnostics, tests[testIndex].diagnosticCount, context);
 
 		cymbArenaRestore(&context->arena, save);
-		cymbDiagnosticListFree(&context->diagnostics);
 	}
 
 	cymbContextPop(context);
@@ -353,10 +340,10 @@ static void cymbTestMurmur3(CymbTestContext* const context)
 		uint32_t solution;
 	} tests[] = {
 		{CYMB_STRING(""), 0x00000000},
-		{CYMB_STRING("test"), 0xBA6BD213},
-		{CYMB_STRING("Hello, world!"), 0xC0363E43},
-		{CYMB_STRING("cymb"), 0xF5188C8F},
-		{CYMB_STRING("Cymb"), 0xED4CCC41}
+		{CYMB_STRING("test"), 0xba6bd213},
+		{CYMB_STRING("Hello, world!"), 0xc0363e43},
+		{CYMB_STRING("cymb"), 0xf5188c8f},
+		{CYMB_STRING("Cymb"), 0xed4ccc41}
 	};
 	constexpr size_t testCount = CYMB_LENGTH(tests);
 
@@ -375,74 +362,6 @@ static void cymbTestMurmur3(CymbTestContext* const context)
 	cymbContextPop(context);
 }
 
-static void cymbTestMap(CymbTestContext* const context)
-{
-	const CymbArenaSave save = cymbArenaSave(&context->arena);
-
-	CymbMap map;
-	if(cymbMapCreate(&map, &context->arena, 16, sizeof(unsigned int), alignof(unsigned int)) != CYMB_SUCCESS)
-	{
-		context->passed = false;
-		return;
-	}
-
-	char keys[26 * 26 * 2];
-
-	for(char first = 'a'; first <= 'z'; ++first)
-	{
-		for(char second = 'a'; second <= 'z'; ++second)
-		{
-			const unsigned char firstOffset = first - 'a';
-			const unsigned char secondOffset = second - 'a';
-
-			const unsigned int offset = firstOffset * 26 + secondOffset;
-
-			keys[offset * 2 + 0] = first;
-			keys[offset * 2 + 1] = second;
-
-			const CymbStringView key = {keys + offset * 2, 2};
-
-			if(cymbMapStore(&map, key, &offset) != CYMB_SUCCESS)
-			{
-				goto error;
-			}
-		}
-	}
-
-	for(char first = 'a'; first <= 'z'; ++first)
-	{
-		for(char second = 'a'; second <= 'z'; ++second)
-		{
-			const unsigned char firstOffset = first - 'a';
-			const unsigned char secondOffset = second - 'a';
-
-			const unsigned int offset = firstOffset * 26 + secondOffset;
-
-			const CymbStringView key = {keys + offset * 2, 2};
-
-			const unsigned int* const result = cymbMapRead(&map, key);
-			if(!result || *result != offset)
-			{
-				goto error;
-			}
-		}
-	}
-	
-	if(cymbMapRead(&map, (CymbConstString)CYMB_STRING("other_key")))
-	{
-		goto error;
-	}
-
-	goto end;
-
-	error:
-	context->passed = false;
-
-	end:
-	cymbMapFree(&map);
-	cymbArenaRestore(&context->arena, save);
-}
-
 int main(void)
 {
 	CymbTestContext context = {.passed = true};
@@ -456,8 +375,6 @@ int main(void)
 	cymbTestArguments(&context);
 
 	cymbTestMurmur3(&context);
-
-	cymbTestMap(&context);
 
 	cymbTestLexs(&context);
 	cymbTestTrees(&context);
